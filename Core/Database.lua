@@ -275,6 +275,14 @@ function Database.SetRouteBinding(rawBinding)
   if not binding then return nil, "invalid-route-binding" end
   return Database.Transaction("set-route-binding", function(working)
     working.routeBindings = type(working.routeBindings) == "table" and working.routeBindings or {}
+    if binding.challengeMapID then
+      for dungeonIndex, existing in pairs(working.routeBindings) do
+        if tonumber(dungeonIndex) ~= binding.dungeonIndex and type(existing) == "table"
+          and tonumber(existing.challengeMapID) == binding.challengeMapID then
+          return nil, "route-binding-map-conflict"
+        end
+      end
+    end
     working.routeBindings[binding.dungeonIndex] = binding
     working.lastRouteDungeonIndex = binding.dungeonIndex
     return true
