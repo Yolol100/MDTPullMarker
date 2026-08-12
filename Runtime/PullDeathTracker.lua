@@ -143,13 +143,6 @@ local function combatLogReader()
   if type(CombatLogGetCurrentEventInfo) == "function" then return CombatLogGetCurrentEventInfo end
 end
 
-local function combatLogRestrictionState()
-  if type(C_CombatLog) ~= "table" or type(C_CombatLog.IsCombatLogRestricted) ~= "function" then return nil end
-  local ok, restricted = pcall(C_CombatLog.IsCombatLogRestricted)
-  if not ok or isSecret(restricted) or type(restricted) ~= "boolean" then return nil end
-  return restricted
-end
-
 local function routeBindingActive()
   return Addon.MDT and type(Addon.MDT.GetRouteBinding) == "function" and Addon.MDT:GetRouteBinding() ~= nil
 end
@@ -227,9 +220,6 @@ end
 
 function Tracker:OnCombatLogEvent()
   if not state.inCombat then return false, "outside-combat" end
-  if combatLogRestrictionState() == true then
-    return markRestrictedForActiveContexts("combat-log-restricted")
-  end
   local reader = combatLogReader()
   if type(reader) ~= "function" then
     return markRestrictedForActiveContexts("combat-log-api-unavailable")
