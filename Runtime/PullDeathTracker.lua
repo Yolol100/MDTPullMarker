@@ -291,8 +291,8 @@ function Tracker:GetCompletionVerdict(pullIndex)
   if context.status == "complete" and context.complete then return true, "death-complete" end
   if (tonumber(context.ambiguousDeathEvents) or 0) > 0 then return nil, "death-tracking-ambiguous-overlap" end
   if context.status == "tracking" and context.expectedTotal > 0 then
-    if (tonumber(context.restrictedDeathEvents) or 0) > 0 then return nil, "death-tracking-restricted" end
     if (tonumber(context.readableDeathEvents) or 0) > 0 then return false, "death-incomplete" end
+    if (tonumber(context.restrictedDeathEvents) or 0) > 0 then return nil, "death-tracking-restricted" end
     return false, "death-tracking-no-evidence"
   end
   return false, "death-tracking-unavailable"
