@@ -208,7 +208,7 @@ local function printTestInstructions()
   chat("2. Select your intended route in MDT and use /mpm bind outside combat. The addon prebuilds MPM001A, MPM002A, and B macros where needed.")
   chat("3. Pull the pack and press that pull's macro. If a B macro exists, wait about 4 seconds before pressing it.")
   chat("4. Unique mob names are targeted automatically with /targetexact and marked with set-if-unmarked ~N.")
-  chat("5. A marked mob name repeated anywhere else in the bound MDT route is parked as manual-required; the addon never guesses which physical clone you meant.")
+  chat("5. A marked mob name proven ambiguous in the bound route or known dungeon metadata is parked as manual-required; the addon never guesses which physical clone you meant.")
   chat("6. When multiple clients are present, one leased marker owner (tank -> leader -> DPS -> healer) remains authoritative.")
 end
 
@@ -231,8 +231,8 @@ local function printDoctor()
     tostring(executor.currentInstructionError or "ready")
   ))
   local owner = executor.markerOwnership or {}
-  chat(("Doctor: marker owner=%s; local-owner=%s; election-pending=%s; peers=%s; legacy=%s; lease=%ss/%ss; progression=%s"):format(
-    tostring(owner.owner or "none"), tostring(owner.isOwner == true), tostring(owner.electionPending == true),
+  chat(("Doctor: marker owner=%s; local-owner=%s; election-pending=%s; comm=%s; peers=%s; legacy=%s; lease=%ss/%ss; progression=%s"):format(
+    tostring(owner.owner or "none"), tostring(owner.isOwner == true), tostring(owner.electionPending == true), tostring(owner.commAvailable == true),
     tostring(owner.peerCount or 0), tostring(owner.legacyPeerCount or 0), tostring(owner.heartbeatSeconds or "?"),
     tostring(owner.peerTTLSeconds or "?"), tostring(executor.progressionMode or "unknown")
   ))
@@ -294,13 +294,14 @@ function Commands:OpenPrimaryInterface()
   return true, "standalone"
 end
 
-local function runRuntimeCommand(label, action)
-  -- In bound-route mode every pull macro is already prebuilt, so selecting a
-  -- different pull during combat is safe. Legacy mode still relies on rewriting
-  -- MDTPM1/MDTPM2 and therefore remains blocked by combat lockdown.
+local function runRuntimeCommand(label, action, allowBoundCombat)
+  -- Bound-route navigation can move the logical cursor in combat because every
+  -- pull macro is already prebuilt. Completion/reopen mutate progression state
+  -- and are intentionally held for a safe out-of-combat boundary.
   local routeBound = getActiveRouteBinding() ~= nil
-  if not routeBound and type(InCombatLockdown) == "function" and InCombatLockdown() then
-    chat(tostring(label).." not executed during combat. Wait until combat ends so the marker macros can refresh safely.")
+  local inCombat = type(InCombatLockdown) == "function" and InCombatLockdown() == true
+  if inCombat and (not routeBound or allowBoundCombat ~= true) then
+    chat(tostring(label).." not executed during combat. Wait until combat ends so progression and marker state stay consistent.")
     return nil, "combat-lockdown"
   end
   local result, runtimeError = action()
@@ -528,17 +529,17 @@ local function handleSlashCommandUnsafe(rawInput)
       chat("Window positions could not be cleared: "..tostring(resetError))
     end
   elseif command == "next" then
-    runRuntimeCommand("Next pull", function() return Addon.RuntimeController:NextPull() end)
+    runRuntimeCommand("Next pull", function() return Addon.RuntimeController:NextPull() end, true)
   elseif command == "prev" then
-    runRuntimeCommand("Previous pull", function() return Addon.RuntimeController:PreviousPull() end)
+    runRuntimeCommand("Previous pull", function() return Addon.RuntimeController:PreviousPull() end, true)
   elseif command == "nextmark" then
-    runRuntimeCommand("Next marker", function() return Addon.RuntimeController:NextInstruction() end)
+    runRuntimeCommand("Next marker", function() return Addon.RuntimeController:NextInstruction() end, true)
   elseif command == "prevmark" then
-    runRuntimeCommand("Previous marker", function() return Addon.RuntimeController:PreviousInstruction() end)
+    runRuntimeCommand("Previous marker", function() return Addon.RuntimeController:PreviousInstruction() end, true)
   elseif command == "complete" then
-    runRuntimeCommand("Complete pull", function() return Addon.RuntimeController:CompleteCurrentPull(true) end)
+    runRuntimeCommand("Complete pull", function() return Addon.RuntimeController:CompleteCurrentPull(true) end, false)
   elseif command == "reopen" then
-    runRuntimeCommand("Reopen pull", function() return Addon.RuntimeController:ReopenCurrentPull() end)
+    runRuntimeCommand("Reopen pull", function() return Addon.RuntimeController:ReopenCurrentPull() end, false)
   elseif command == "mdtui" or command == "mdt" or command == "open" then
     local opened, openError = Commands:OpenPrimaryInterface()
     if not opened then chat("Interface unavailable: "..tostring(openError)) end
