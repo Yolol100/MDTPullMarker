@@ -1,9 +1,9 @@
-# Compatibility - 1.0.0-rc54
+# Compatibility - 1.0.0-rc55
 
 ## Route identity and dungeon selection
 
 - MDT is the authoritative source for pull membership and configured raid-target assignments.
-- rc54 stores one explicitly chosen route binding per dungeon (`schema 12`). Existing rc45/schema-10 single bindings still migrate automatically into the matching dungeon entry; schema 12 only retires two historical settings that no longer control any runtime path.
+- rc55 stores one explicitly chosen route binding per dungeon (`schema 12`). Existing rc45/schema-10 single bindings still migrate automatically into the matching dungeon entry; schema 12 only retires two historical settings that no longer control any runtime path.
 - UID-backed routes resolve by UID. UID-less copied routes use bounded preset identity/name fallback so normal content edits do not silently rebind to another visible MDT preset.
 - During an active Mythic+ run, the live challenge-map identity is authoritative. A saved binding from another dungeon is not substituted when the active dungeon has no binding.
 - Binding or unbinding during an active key is constrained to the matching dungeon and fails closed on a verified mismatch.
@@ -36,7 +36,7 @@ A new pre-combat group-owner election parks managed execution surfaces immediate
 
 ## Same-name limit
 
-A secure exact-name macro cannot identify an MDT clone when physical units share the same visible name. rc54 resolves client-local names where possible and always checks duplicate target names across the complete bound route, including non-adjacent pulls because intermediate pulls may be skipped.
+A secure exact-name macro cannot identify an MDT clone when physical units share the same visible name. rc55 resolves client-local names where possible and always checks duplicate target names across the complete bound route, including non-adjacent pulls because intermediate pulls may be skipped.
 
 When a normalized MDT snapshot contains broader enemy metadata, clone totals for those known enemy types are also used. A duplicate proven outside the route therefore becomes `manual-required`. Legacy/global MDT enemy data is explicitly scoped as `dungeon`. MDT 6.2.x UI-hook/cache metadata is explicitly scoped as `captured-enemy-types` or `cached-enemy-types`: each captured type can carry its full clone list, but that scope is not claimed to prove enumeration of every other enemy type in every sublevel. The adapter reports `dungeon-name-coverage-partial` for that case.
 
@@ -56,6 +56,8 @@ Ambiguous automatic pulls become `manual-required`; no unfiltered target cycling
 - Missing/unavailable death contexts fail closed rather than implicitly completing a submitted pull.
 - A wipe clears pending submission/death progress rather than advancing the route.
 
+On Retail 12.1, the tracker prefers `C_CombatLog.GetCurrentEventInfo` directly and retains `CombatLogGetCurrentEventInfo` only as a compatibility fallback. This prevents disabling Blizzard's deprecated global fallbacks from being misclassified as combat-log restriction while preserving the existing event-level secret checks.
+
 ## Marker submission semantics
 
 The macro callback occurs after protected `/tm` lines. The addon can verify the route token and record a valid macro **submission attempt**, but Retail does not provide a reliable universal per-unit proof that every protected marker line succeeded. Progression therefore never labels those protected operations as individually confirmed.
@@ -66,7 +68,7 @@ The addon uses a conservative ~4 second local pacing window between A/B/C submis
 
 ## Target behavior
 
-Exact-name route macros clear and retarget before each marker operation so a failed `/targetexact` cannot accidentally mark the previous unit. This necessarily changes the player's target. rc54 does not add automatic target-history restoration because it would increase the protected macro byte budget substantially and is not proven safe across all target-failure sequences in the Retail client.
+Exact-name route macros clear and retarget before each marker operation so a failed `/targetexact` cannot accidentally mark the previous unit. This necessarily changes the player's target. rc55 does not add automatic target-history restoration because it would increase the protected macro byte budget substantially and is not proven safe across all target-failure sequences in the Retail client.
 
 ## Party ownership
 
@@ -74,7 +76,7 @@ Grouped clients derive one deterministic roster anchor with the existing priorit
 
 Grouped execution requires positively registered addon communication plus a complete readable group roster, including role and leader ranking data. Current Retail communication result codes are validated explicitly; throttle/lockdown/invalid/secret results are failures. Unknown group/raid state, incomplete unit identities, unreadable role/leader/death state, prefix-registration failure or a failed send leaves the client passive instead of falling back to local ownership. Solo play does not require the election channel.
 
-A failed send immediately clears communication availability and ownership. Later safe group/world/heartbeat boundaries retry prefix registration. Successful recovery starts a new settle window and keeps macros parked until that election settles; an old owner is never silently restored.
+A failed send immediately clears communication availability and ownership. Later safe group/world/heartbeat boundaries first prove whether the prefix is already registered and register it only when needed. Communication is then retried through a new settle window; an old owner is never silently restored. Retail's `DuplicatePrefix` result is accepted only when `IsAddonMessagePrefixRegistered` independently proves the prefix is registered.
 
 This is intentionally availability-conservative: if the deterministic roster anchor does not run the addon, is locally ineligible, or cannot prove communication while remaining in the roster, no lower roster member is promoted from silence alone. A roster change can make another member the new deterministic anchor. This is required to prevent two isolated clients from each self-electing after delayed/lost addon messages.
 
