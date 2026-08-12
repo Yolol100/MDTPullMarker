@@ -269,13 +269,36 @@ local function addonMessageCallSucceeded(result)
   return result == true or (type(result) == "number" and result == 0)
 end
 
+local function prefixRegistrationState()
+  if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.IsAddonMessagePrefixRegistered) ~= "function" then return nil end
+  local ok, registered = pcall(C_ChatInfo.IsAddonMessagePrefixRegistered, PREFIX)
+  if not ok or isSecret(registered) or type(registered) ~= "boolean" then return nil end
+  return registered
+end
+
 local function registerCommunication()
   if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.RegisterAddonMessagePrefix) ~= "function" then
     state.commAvailable = false
     return false
   end
+
+  -- Send failures such as throttling or chat lockdown do not unregister an
+  -- addon prefix. Prove an existing registration first so recovery does not
+  -- misclassify Retail's DuplicatePrefix result as a permanent failure.
+  if prefixRegistrationState() == true then
+    state.commAvailable = true
+    return true
+  end
+
   local ok, registered = pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
-  state.commAvailable = ok and addonMessageCallSucceeded(registered)
+  local registrationSucceeded = ok and addonMessageCallSucceeded(registered)
+  if not registrationSucceeded and ok and type(registered) == "number" and registered == 1 then
+    -- RegisterAddonMessagePrefixResult.DuplicatePrefix == 1 on current Retail.
+    -- Accept it only when the independent registration query proves our prefix
+    -- is in fact registered; older clients without that query remain fail-closed.
+    registrationSucceeded = prefixRegistrationState() == true
+  end
+  state.commAvailable = registrationSucceeded
   if not state.commAvailable then
     state.owner = nil
     state.ownerReason = "comm-unavailable"
@@ -293,7 +316,7 @@ local function send(kind)
   if not ok or not addonMessageCallSucceeded(result) then
     -- A thrown/non-success send proves only that the channel is unusable now.
     -- Drop ownership immediately, then let later group/world/heartbeat boundaries
-    -- retry prefix registration while remaining passive until communication works.
+    -- retry communication while remaining passive until a fresh election settles.
     state.commAvailable = false
     state.owner = nil
     state.ownerReason = "comm-unavailable"
