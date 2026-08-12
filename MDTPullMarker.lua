@@ -1,7 +1,7 @@
 local addonName, Addon = ...
 
 local PREFIX = "|cff33ff99MDT Pull Marker:|r "
-local ADDON_VERSION = "1.0.0-rc54"
+local ADDON_VERSION = "1.0.0-rc55"
 local MAX_LOG_ENTRIES = 100
 
 Addon.Name = addonName
