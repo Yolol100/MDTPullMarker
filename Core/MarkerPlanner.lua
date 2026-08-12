@@ -217,12 +217,14 @@ local function classifyTargeting(assignments, findings, path)
     local pullNameTotal = 0
     local adjacentPullNameTotal = 0
     local otherPullNameTotal = 0
+    local dungeonNameTotal = 0
     for _, assignment in ipairs(group) do
       pullNameTotal = math.max(pullNameTotal, tonumber(assignment.pullNameTotal) or 0)
       adjacentPullNameTotal = math.max(adjacentPullNameTotal, tonumber(assignment.adjacentPullNameTotal) or 0)
       otherPullNameTotal = math.max(otherPullNameTotal, tonumber(assignment.otherPullNameTotal) or 0)
+      dungeonNameTotal = math.max(dungeonNameTotal, tonumber(assignment.dungeonNameTotal) or 0)
     end
-    if #group > 1 or pullNameTotal > 1 or otherPullNameTotal > 0 then
+    if #group > 1 or pullNameTotal > 1 or otherPullNameTotal > 0 or dungeonNameTotal > 1 then
       automatic = false
       table.sort(group, assignmentSort)
       for ordinal, assignment in ipairs(group) do
@@ -232,8 +234,9 @@ local function classifyTargeting(assignments, findings, path)
         assignment.markedNameTotal = math.max(#group, tonumber(assignment.markedNameTotal) or 0)
         assignment.executionMethod = "same-name-manual"
         assignment.method = "same-name-secure-limit"
-        assignment.matchPolicy = otherPullNameTotal > 0
-          and "route-wide-same-name-unit-identity-unavailable" or "same-name-unit-identity-unavailable"
+        assignment.matchPolicy = dungeonNameTotal > 1
+          and "dungeon-wide-same-name-unit-identity-unavailable"
+          or (otherPullNameTotal > 0 and "route-wide-same-name-unit-identity-unavailable" or "same-name-unit-identity-unavailable")
         assignment.automaticTargeting = false
       end
       finding(findings, "warning", "same-name-automatic-targeting-unavailable", path, {
@@ -242,8 +245,10 @@ local function classifyTargeting(assignments, findings, path)
         pullCount = pullNameTotal,
         adjacentPullCount = adjacentPullNameTotal,
         otherPullCount = otherPullNameTotal,
-        policy = otherPullNameTotal > 0
-          and "fail-closed-route-wide-skip-chain-pull-name-ambiguity" or "fail-closed-no-unfiltered-target-cycle",
+        dungeonCount = dungeonNameTotal,
+        policy = dungeonNameTotal > 1
+          and "fail-closed-dungeon-wide-exact-name-ambiguity"
+          or (otherPullNameTotal > 0 and "fail-closed-route-wide-skip-chain-pull-name-ambiguity" or "fail-closed-no-unfiltered-target-cycle"),
       })
     end
   end

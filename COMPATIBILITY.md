@@ -8,6 +8,7 @@
 - During an active Mythic+ run, the live challenge-map identity is authoritative. A saved binding from another dungeon is not substituted when the active dungeon has no binding.
 - Binding or unbinding during an active key is constrained to the matching dungeon and fails closed on a verified mismatch.
 - A route bound before a future season exposes its Challenge Map ID may be recovered after season activation only by one unique normalized match against MDT's current client-localized dungeon name for the saved MDT dungeon index. This also survives a client-locale change between binding and season start. The persisted bind-time name is fallback-only. This recovery applies only to bindings with no stored map ID; a binding with a different map ID is never reassigned.
+- New writes reject assigning the same positive Challenge Map ID to two different dungeon bindings. If legacy/corrupt SavedVariables already contain an ambiguous active-map or name mapping, active Mythic+ route refresh fails closed instead of falling through to the currently selected MDT route.
 
 ## Precomputed secure macro model
 
@@ -20,7 +21,9 @@
 
 ## Execution gating
 
-A route macro is executable only when the matching dungeon session is active, the challenge is not completed, the bound route matches, and this client is the elected marker owner. Otherwise managed macros are written to the safe idle body.
+A route macro is executable only when the matching dungeon session is active, the challenge is not completed, the bound route matches, and this client is the settled marker owner. Otherwise managed macros are written to the safe idle body.
+
+A new pre-combat group-owner election parks managed execution surfaces immediately. This closes the gap where a previously active macro body could otherwise reach its protected `/tm` lines before the trailing `/mpm b` callback noticed that ownership had become unsettled. Reactivation happens only after the settle window completes and ownership is proven again.
 
 ## Stable macro slots
 
@@ -33,7 +36,11 @@ A route macro is executable only when the matching dungeon session is active, th
 
 ## Same-name limit
 
-A secure exact-name macro cannot identify an MDT clone when physical units share the same visible name. rc54 resolves client-local names where possible and checks duplicate marked target names route-wide. This includes non-adjacent pulls because intermediate pulls may be skipped. Ambiguous automatic pulls become `manual-required`; no unfiltered target cycling is used.
+A secure exact-name macro cannot identify an MDT clone when physical units share the same visible name. rc54 resolves client-local names where possible and always checks duplicate target names across the complete bound route, including non-adjacent pulls because intermediate pulls may be skipped.
+
+When a normalized MDT snapshot contains broader enemy metadata, clone totals for those known enemy types are also used. A duplicate proven outside the route therefore becomes `manual-required`. Legacy/global MDT enemy data is explicitly scoped as `dungeon`. MDT 6.2.x UI-hook/cache metadata is explicitly scoped as `captured-enemy-types` or `cached-enemy-types`: each captured type can carry its full clone list, but that scope is not claimed to prove enumeration of every other enemy type in every sublevel. The adapter reports `dungeon-name-coverage-partial` for that case.
+
+Ambiguous automatic pulls become `manual-required`; no unfiltered target cycling is used.
 
 ## Overlap-aware progression
 
@@ -43,12 +50,17 @@ A secure exact-name macro cannot identify an MDT clone when physical units share
 - Returning to a skipped pull engages it and clears the skip state.
 - `PullDeathTracker` maintains independent contexts for active overlapping pulls.
 - A readable death that can belong to more than one active pull is rejected as ambiguous and blocks automatic completion for the affected context.
-- Secret/restricted/unavailable combat identity remains advisory and never drives a protected combat action.
+- A tracking pull with ordinary readable combat-log access and zero expected death evidence returns a negative completion verdict instead of being treated as advisory success.
+- Readable but incomplete death evidence also blocks completion.
+- Combat-log API/read/secret failures are recorded as restricted evidence for active contexts. Restricted identity remains advisory because the client has explicitly prevented a normal proof path; it is kept distinct from an ordinary no-evidence state.
+- Missing/unavailable death contexts fail closed rather than implicitly completing a submitted pull.
 - A wipe clears pending submission/death progress rather than advancing the route.
 
 ## Marker submission semantics
 
 The macro callback occurs after protected `/tm` lines. The addon can verify the route token and record a valid macro **submission attempt**, but Retail does not provide a reliable universal per-unit proof that every protected marker line succeeded. Progression therefore never labels those protected operations as individually confirmed.
+
+A valid submission alone is not treated as readable death proof. When the combat log is normally readable, at least expected pull-death progress is required before completion can be accepted; zero expected evidence blocks. The restricted/secret fallback remains advisory for environments where Retail withholds the relevant identity.
 
 The addon uses a conservative ~4 second local pacing window between A/B/C submissions. Blizzard documents the three-unit burst restriction but not an exact four-second reset.
 
@@ -62,18 +74,24 @@ Grouped clients derive one deterministic roster anchor with the existing priorit
 
 Grouped execution requires positively registered addon communication plus a complete readable group roster, including role and leader ranking data. Current Retail communication result codes are validated explicitly; throttle/lockdown/invalid/secret results are failures. Unknown group/raid state, incomplete unit identities, unreadable role/leader/death state, prefix-registration failure or a failed send leaves the client passive instead of falling back to local ownership. Solo play does not require the election channel.
 
+A failed send immediately clears communication availability and ownership. Later safe group/world/heartbeat boundaries retry prefix registration. Successful recovery starts a new settle window and keeps macros parked until that election settles; an old owner is never silently restored.
+
 This is intentionally availability-conservative: if the deterministic roster anchor does not run the addon, is locally ineligible, or cannot prove communication while remaining in the roster, no lower roster member is promoted from silence alone. A roster change can make another member the new deterministic anchor. This is required to prevent two isolated clients from each self-electing after delayed/lost addon messages.
 
-The combat owner is a true frozen state, including a frozen `nil` owner. If combat begins before the settle window has proven one group owner, that combat stays passive; delayed peer/roster information is used only for the next election. While combat is frozen, peer heartbeats, settle completion and group-loss transitions do not refresh `MarkerExecutor`, so they cannot cancel an in-flight marker confirmation.
+The combat owner is a true frozen state, including a frozen `nil` owner. If combat begins before the settle window has proven one group owner, that combat stays passive; delayed peer/roster information is used only for the next election. While combat is frozen, peer heartbeats, settle completion and group-loss transitions do not change the effective owner for the current combat.
 
 Macro ownership likewise requires a readable runtime account-macro boundary and valid account/character macro counts. Missing, secret or malformed slot metadata blocks create/edit/delete rather than guessing a capacity or slot index.
 
+## Runtime commands
+
+Bound-route cursor navigation can still move between already-prebuilt pulls/instructions during combat. Manual commands that change completion history (`complete` and `reopen`) are rejected during combat and must run at a safe boundary.
+
 ## Legacy mode
 
-Without a binding for the active dungeon, the rc44-compatible `MDTPM1/MDTPM2` workflow remains available with a maximum of six automatic marker assignments and safe-boundary rewrites.
+Without a binding for the active dungeon, the rc44-compatible `MDTPM1/MDTPM2` workflow remains available with a maximum of six automatic marker assignments and safe-boundary rewrites. An ambiguous/corrupt saved binding for an active Mythic+ map is not treated as equivalent to “no binding”; that state blocks route refresh instead of silently entering the visible-route fallback.
 
-## Automated validation
+## Validation status
 
-The release suite covers package/version integrity, Lua syntax, static policy, macro byte budgets, 2/3-batch planning, 2,000 planner fuzz cases, schema-9/10 -> schema-12 migration, independent dungeon bindings, active-dungeon selection, full-route token/macro generation, route-wide same-name fail-closed behavior, overlap/skip state, multi-context death evidence, A/B/C pacing, wrong-dungeon/passive parking, stable parked macro indices, personal-name conflicts, partial-create failure handling, mutation readback, owner election/freeze, localized names, full TOC load, and MDT 6.1.20/6.2.x compatibility fixtures, current MDT 6.2.1 enemy-metadata hook behavior, and all eight Midnight Season 2 route identities, including pre-season bind -> client-locale change -> season activation recovery.
+The source history describes a release suite covering package/version integrity, Lua syntax, static policy, macro byte budgets, 2/3-batch planning, planner fuzzing, migrations, independent dungeon bindings, active-dungeon selection, route tokens/macros, same-name behavior, overlap/skip state, multi-context death evidence, pacing, parking, macro conflicts, owner election/freeze, localized names, full TOC load and MDT compatibility fixtures.
 
-A real Retail/Midnight client test remains required for final taint/protected-action verification.
+The published runtime repository does not contain that engineering test suite or `LIVE_TEST_CHECKLIST.md`, so changes on this branch have been reviewed statically against the complete runtime source and current MDT 6.2.1 integration contract, but the historical automated suite has not been independently rerun here. A real Retail/Midnight client test remains required for final taint/protected-action verification.

@@ -509,7 +509,7 @@ local function readDBOnlySnapshot(api, allowUILoad)
   local compatibility=hasCapturedEnemyData and "route-data+captured-enemy" or (hasCachedEnemyData and "route-data+cached-enemy" or "route-data")
   return Addon.RouteSnapshot.NormalizePreset(preset,{
     sourceMode="db-only",compatibility=compatibility,mdtVersion=state.version,dungeonIndex=dungeonIndex,dungeonName=dungeonName,challengeMapID=challengeMapID,presetIndex=presetIndex,enemyData=enemyData,
-    enemyDataScope=hasCapturedEnemyData and "captured-map" or (hasCachedEnemyData and "cached-active-dungeon" or nil), clientLocale=getClientLocale(), targetNameLocaleStatus=enemyData and localeStatus(namesVerified) or nil, expectCloneMetadata=hasCapturedEnemyData,
+    enemyDataScope=hasCapturedEnemyData and "captured-enemy-types" or (hasCachedEnemyData and "cached-enemy-types" or nil), clientLocale=getClientLocale(), targetNameLocaleStatus=enemyData and localeStatus(namesVerified) or nil, expectCloneMetadata=hasCapturedEnemyData,
   })
 end
 
@@ -615,9 +615,9 @@ local function selectSavedBinding(api, legacy, allowUILoad)
   if challengeMapID then
     local binding, bindingError = bindingForActiveChallengeMap(challengeMapID)
     if binding then return binding, "active-challenge-map" end
-    -- An active Mythic+ map is authoritative. Never fall back to whichever
-    -- dungeon happens to be selected in MDT, otherwise a saved binding for a
-    -- different dungeon could look active during this run.
+    -- An active Mythic+ map is authoritative. Ambiguous/corrupt saved binding
+    -- state must not be silently replaced by the visible MDT dropdown. A truly
+    -- unbound active dungeon may still use the separately gated legacy path.
     return nil, bindingError or "active-challenge-map-unbound"
   end
   local db = bindingDatabase(api, legacy, allowUILoad)
@@ -739,7 +739,7 @@ local function readBoundSnapshot(api, legacy, binding, allowUILoad)
       dungeonName = safeCall(api.GetDungeonName, api, dungeonIndex)
     end
     compatibility = hasCaptured and "bound-route+captured-enemy" or (hasCached and "bound-route+cached-enemy" or "bound-route")
-    enemyDataScope = hasCaptured and "captured-map" or (hasCached and "cached-active-dungeon" or nil)
+    enemyDataScope = hasCaptured and "captured-enemy-types" or (hasCached and "cached-enemy-types" or nil)
   end
 
   if not challengeMapID and dungeonName then challengeMapID = resolveChallengeMapID(dungeonName) end
@@ -822,8 +822,16 @@ function Adapter:Refresh(reason, options)
   if api then registerUIInitializer(api) end
 
   local snapshot, snapshotError
-  local binding
-  if not options.ignoreBinding then binding = selectSavedBinding(api, legacy, options.allowUILoad == true) end
+  local binding, bindingSelection
+  if not options.ignoreBinding then
+    binding, bindingSelection = selectSavedBinding(api, legacy, options.allowUILoad == true)
+    if not binding and bindingSelection and bindingSelection ~= "active-challenge-map-unbound" then
+      state.mode = "bound-route-unavailable"
+      state.compatibility = "unavailable"
+      state.lastError = bindingSelection
+      return nil, state.lastError
+    end
+  end
   if binding then
     state.activeBinding = DataUtils.DeepCopy(binding)
     snapshot, snapshotError = readBoundSnapshot(api, legacy, binding, options.allowUILoad == true)
@@ -874,6 +882,9 @@ function Adapter:Refresh(reason, options)
 
   if snapshot then
     state.snapshot = snapshot
+    if snapshot.enemyNameScope == "captured-enemy-types" or snapshot.enemyNameScope == "cached-enemy-types" then
+      addStateWarning("dungeon-name-coverage-partial", "Captured MDT metadata contains full clone lists for known enemy types, but is not presented as a complete cross-type dungeon name inventory.")
+    end
     if state.versionStatus == "too-old" then
       state.snapshot = nil
       state.compatibility = "unavailable"
@@ -1068,6 +1079,7 @@ function Adapter:GetStatus()
       dungeonIndex = state.snapshot.dungeonIndex, dungeonName = state.snapshot.dungeonName,
       presetName = state.snapshot.presetName, pullCount = #(state.snapshot.pulls or {}),
       nativeAssignmentsAvailable = state.snapshot.nativeAssignmentsAvailable == true,
+      enemyNameScope = state.snapshot.enemyNameScope,
     } or nil,
     installed = state.installed,
     loaded = state.loaded,

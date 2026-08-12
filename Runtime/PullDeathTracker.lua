@@ -119,6 +119,19 @@ local function notifyProgress(reason)
   end
 end
 
+local function markRestrictedForActiveContexts(reason)
+  state.restrictedDeathEvents = state.restrictedDeathEvents + 1
+  state.lastReason = reason or "combat-log-restricted"
+  for _, context in pairs(state.contexts) do
+    if context.active then
+      context.restrictedDeathEvents = (context.restrictedDeathEvents or 0) + 1
+      context.lastReason = state.lastReason
+    end
+  end
+  notifyProgress(state.lastReason)
+  return false, state.lastReason
+end
+
 local function routeBindingActive()
   return Addon.MDT and type(Addon.MDT.GetRouteBinding) == "function" and Addon.MDT:GetRouteBinding() ~= nil
 end
@@ -197,34 +210,20 @@ end
 function Tracker:OnCombatLogEvent()
   if not state.inCombat then return false, "outside-combat" end
   if type(CombatLogGetCurrentEventInfo) ~= "function" then
-    state.lastReason = "combat-log-api-unavailable"
-    return false, state.lastReason
+    return markRestrictedForActiveContexts("combat-log-api-unavailable")
   end
 
   local ok, _, subevent, _, _, _, _, _, destGUID = pcall(CombatLogGetCurrentEventInfo)
   if not ok then
-    state.restrictedDeathEvents = state.restrictedDeathEvents + 1
-    state.lastReason = "combat-log-read-failed"
-    for _, context in pairs(state.contexts) do
-      if context.active then
-        context.restrictedDeathEvents = (context.restrictedDeathEvents or 0) + 1
-        context.lastReason = state.lastReason
-      end
-    end
-    return false, state.lastReason
+    return markRestrictedForActiveContexts("combat-log-read-failed")
   end
   if isSecret(subevent) then
-    state.restrictedDeathEvents = state.restrictedDeathEvents + 1
-    state.lastReason = "combat-log-subevent-secret"
-    return false, state.lastReason
+    return markRestrictedForActiveContexts("combat-log-subevent-secret")
   end
   if subevent ~= "UNIT_DIED" and subevent ~= "UNIT_DESTROYED" then return false, "irrelevant-event" end
 
   if isSecret(destGUID) or type(destGUID) ~= "string" then
-    state.restrictedDeathEvents = state.restrictedDeathEvents + 1
-    state.lastReason = "combat-log-dest-guid-secret"
-    notifyProgress(state.lastReason)
-    return false, state.lastReason
+    return markRestrictedForActiveContexts("combat-log-dest-guid-secret")
   end
   if state.seenGUIDs[destGUID] then return false, "death-already-counted" end
 
@@ -288,14 +287,15 @@ end
 function Tracker:GetCompletionVerdict(pullIndex)
   pullIndex = DataUtils.PositiveInteger(pullIndex) or state.focusPullIndex
   local context = pullIndex and state.contexts[pullIndex] or nil
-  if not context then return nil, "death-tracking-no-context" end
+  if not context then return false, "death-tracking-no-context" end
   if context.status == "complete" and context.complete then return true, "death-complete" end
   if (tonumber(context.ambiguousDeathEvents) or 0) > 0 then return nil, "death-tracking-ambiguous-overlap" end
   if context.status == "tracking" and context.expectedTotal > 0 then
     if (tonumber(context.readableDeathEvents) or 0) > 0 then return false, "death-incomplete" end
-    return nil, "death-tracking-no-evidence"
+    if (tonumber(context.restrictedDeathEvents) or 0) > 0 then return nil, "death-tracking-restricted" end
+    return false, "death-tracking-no-evidence"
   end
-  return nil, context.status == "restricted" and context.lastReason or "death-tracking-unavailable"
+  return false, "death-tracking-unavailable"
 end
 
 local function contextState(context)
