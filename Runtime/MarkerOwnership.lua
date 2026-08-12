@@ -269,6 +269,20 @@ local function addonMessageCallSucceeded(result)
   return result == true or (type(result) == "number" and result == 0)
 end
 
+local function registerCommunication()
+  if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.RegisterAddonMessagePrefix) ~= "function" then
+    state.commAvailable = false
+    return false
+  end
+  local ok, registered = pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
+  state.commAvailable = ok and addonMessageCallSucceeded(registered)
+  if not state.commAvailable then
+    state.owner = nil
+    state.ownerReason = "comm-unavailable"
+  end
+  return state.commAvailable
+end
+
 local function send(kind)
   if not state.commAvailable or type(C_ChatInfo) ~= "table" or type(C_ChatInfo.SendAddonMessage) ~= "function" then return false end
   local channel = distribution()
@@ -277,9 +291,9 @@ local function send(kind)
   local payload = table.concat({ tostring(kind or "H"), tostring(Addon.Version or "unknown"), state.localEligible and "1" or "0" }, "|")
   local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, payload, channel)
   if not ok or not addonMessageCallSucceeded(result) then
-    -- A thrown send error proves that the group election channel is unusable.
-    -- Drop ownership immediately instead of allowing this client to continue as
-    -- a potentially duplicate marker owner.
+    -- A thrown/non-success send proves only that the channel is unusable now.
+    -- Drop ownership immediately, then let later group/world/heartbeat boundaries
+    -- retry prefix registration while remaining passive until communication works.
     state.commAvailable = false
     state.owner = nil
     state.ownerReason = "comm-unavailable"
@@ -291,9 +305,26 @@ end
 
 local function refreshExecutor(reason)
   recomputeOwner(reason)
-  Addon.MarkerExecutor:OnInstructionChanged("marker-owner:"..tostring(reason or "changed"))
-  if Addon.RuntimeFrame:IsOpen() then Addon.RuntimeFrame:Refresh() end
+  if Addon.MarkerExecutor and type(Addon.MarkerExecutor.OnInstructionChanged) == "function" then
+    Addon.MarkerExecutor:OnInstructionChanged("marker-owner:"..tostring(reason or "changed"))
+  end
+  if Addon.RuntimeFrame and Addon.RuntimeFrame.IsOpen and Addon.RuntimeFrame:IsOpen() then Addon.RuntimeFrame:Refresh() end
 end
+
+local function parkUnsettledExecution(reason)
+  -- The callback at the end of an MPM macro is too late to stop protected /tm
+  -- lines that are already in an active body. As soon as a pre-combat election
+  -- becomes unsettled, rewrite every managed execution surface to its safe idle
+  -- form. Combat-frozen owners remain unchanged because protected macros cannot
+  -- and must not be mutated after combat begins.
+  if state.combatFrozen then return false, "combat-owner-frozen" end
+  if Addon.MarkerExecutor and type(Addon.MarkerExecutor.OnInstructionChanged) == "function" then
+    return Addon.MarkerExecutor:OnInstructionChanged("marker-owner:"..tostring(reason or "election-unsettled"))
+  end
+  return false, "executor-unavailable"
+end
+
+local startSettle
 
 local function scheduleHeartbeat()
   if not state.initialized or type(C_Timer) ~= "table" or type(C_Timer.After) ~= "function" then return false end
@@ -303,11 +334,20 @@ local function scheduleHeartbeat()
   local function tick()
     if not state.initialized or serial ~= state.heartbeatSerial then return end
     local previousOwner = effectiveOwner()
-    recomputeOwner("heartbeat")
-    if inGroup() == true and state.commAvailable then
-      -- rc40 understands H and responds with R but has no periodic heartbeat of its own.
-      -- Ping with H while a legacy peer is present; rc41+ groups use the quieter B lease.
-      send(hasLegacyPeer() and "H" or "B")
+    local grouped = inGroup()
+    if grouped == true and not state.commAvailable then
+      if registerCommunication() then
+        startSettle("heartbeat-comm-recovered")
+      else
+        recomputeOwner("heartbeat-comm-unavailable")
+      end
+    else
+      recomputeOwner("heartbeat")
+      if grouped == true and state.commAvailable then
+        -- rc40 understands H and responds with R but has no periodic heartbeat of its own.
+        -- Ping with H while a legacy peer is present; rc41+ groups use the quieter B lease.
+        send(hasLegacyPeer() and "H" or "B")
+      end
     end
     local currentOwner = effectiveOwner()
     if previousOwner ~= currentOwner and not state.combatFrozen and now() >= state.settlingUntil then
@@ -320,8 +360,10 @@ local function scheduleHeartbeat()
   return true
 end
 
-local function startSettle(reason)
-  if inGroup() ~= true or not state.commAvailable then
+startSettle = function(reason)
+  local grouped = inGroup()
+  if grouped == true and not state.commAvailable then registerCommunication() end
+  if grouped ~= true or not state.commAvailable then
     state.settlingUntil = 0
     if state.combatFrozen then
       recomputeOwner(reason or "settle-skipped")
@@ -334,7 +376,11 @@ local function startSettle(reason)
   local serial = state.serial
   state.settlingUntil = now() + SETTLE_SECONDS
   recomputeOwner(reason or "settling")
-  send("H")
+  if not state.combatFrozen then parkUnsettledExecution("election-start") end
+  if not send("H") then
+    if not state.combatFrozen then refreshExecutor("comm-send-failed") end
+    return
+  end
   if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
     C_Timer.After(SETTLE_SECONDS + 0.05, function()
       if serial ~= state.serial then return end
@@ -347,10 +393,7 @@ end
 function Ownership:Initialize()
   if state.initialized then return true end
   state.localName = fullNameForUnit("player") or "player"
-  if type(C_ChatInfo) == "table" and type(C_ChatInfo.RegisterAddonMessagePrefix) == "function" then
-    local ok, registered = pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
-    state.commAvailable = ok and addonMessageCallSucceeded(registered)
-  end
+  registerCommunication()
   state.initialized = true
   startSettle("initialize")
   scheduleHeartbeat()
@@ -361,7 +404,9 @@ function Ownership:RefreshEligibility(reason)
   local before = state.localEligible
   state.localEligible = currentEligibility()
   recomputeOwner(reason or "eligibility")
-  if before ~= state.localEligible then send("H") end
+  if before ~= state.localEligible and not send("H") and not state.combatFrozen then
+    refreshExecutor("eligibility-comm-failed")
+  end
   return self:GetState()
 end
 
