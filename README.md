@@ -1,4 +1,4 @@
-# MDT Pull Marker 1.0.0-rc54
+# MDT Pull Marker 1.0.0-rc55
 
 MDT Pull Marker reads raid-target assignments from Mythic Dungeon Tools (MDT) and turns the chosen route for each dungeon into prebuilt, pull-specific combat macros. MDT remains authoritative for pull order and raid icons: configured markers are never silently remapped.
 
@@ -18,7 +18,7 @@ The visible MDT dropdown does not silently replace a saved binding. Rebinding a 
 
 ## Per-dungeon route storage
 
-rc54 stores route bindings by MDT dungeon identity. For example:
+rc55 stores route bindings by MDT dungeon identity. For example:
 
 - Dungeon A -> chosen Route A
 - Dungeon B -> chosen Route B
@@ -26,7 +26,7 @@ rc54 stores route bindings by MDT dungeon identity. For example:
 
 Entering an active Mythic+ dungeon makes that dungeon context authoritative. A binding from another dungeon is never used as a fallback inside the active key. `/mpm unbind` clears only the active dungeon's binding.
 
-A route may be bound before a future season exposes that dungeon through `C_ChallengeMode.GetMapTable()`. If its Challenge Map ID was therefore unavailable at bind time, rc54 can recover that binding once the dungeon becomes active by requiring one unique match against MDT's current client-localized dungeon name for the saved MDT dungeon index. This remains valid if the client locale changed after binding. The bind-time name is only a fallback, and a binding that already carries a different map ID is never repurposed.
+A route may be bound before a future season exposes that dungeon through `C_ChallengeMode.GetMapTable()`. If its Challenge Map ID was therefore unavailable at bind time, rc55 can recover that binding once the dungeon becomes active by requiring one unique match against MDT's current client-localized dungeon name for the saved MDT dungeon index. This remains valid if the client locale changed after binding. The bind-time name is only a fallback, and a binding that already carries a different map ID is never repurposed.
 
 A Challenge Map ID cannot be newly assigned to two different saved dungeon bindings. If older/corrupt SavedVariables already contain an ambiguous map or name mapping, active Mythic+ route resolution fails closed instead of falling back to the currently visible MDT route.
 
@@ -54,11 +54,13 @@ Bound mode keeps progress per marked pull instead of only one global current-pul
 - A submitted pull with readable combat-log access but no expected death evidence does not auto-complete at combat end.
 - If Retail makes the relevant combat-log identity genuinely secret/restricted, death evidence remains advisory; a restricted state is kept distinct from an ordinary no-evidence state.
 
+On Retail 12.1, death tracking reads the current `C_CombatLog` event reader directly when available, so disabling Blizzard's deprecated global fallbacks does not by itself make readable combat-log data look restricted. The legacy global remains only as a compatibility fallback.
+
 The player's macro press remains the authoritative signal for an intentional chain-pull or jump, but a normal readable combat with zero expected death evidence is not treated as proof that the pull completed.
 
 ## Same-name safety
 
-`/targetexact` cannot prove which physical MDT clone was selected when multiple simultaneously reachable mobs share the same visible name. Because players may skip pulls or chain non-adjacent pulls, rc54 checks the complete bound route, not only neighboring pulls.
+`/targetexact` cannot prove which physical MDT clone was selected when multiple simultaneously reachable mobs share the same visible name. Because players may skip pulls or chain non-adjacent pulls, rc55 checks the complete bound route, not only neighboring pulls.
 
 When MDT exposes dungeon enemy metadata, the planner also uses the known clone totals for captured enemy types. A duplicate proven by that metadata becomes `manual-required` even when the duplicate is outside the selected route. MDT 6.2.x metadata captured through the UI hook is explicitly labelled `captured-enemy-types`/`cached-enemy-types`: those records contain the full clone list for each known enemy type, but are not presented as proof that every other enemy type in every sublevel has been enumerated. Route-wide ambiguity remains the guaranteed baseline.
 
@@ -81,9 +83,9 @@ When the last route binding is intentionally removed, the addon may retire its r
 
 In grouped play the marker-owner election must be settled before combat starts. All clients derive one deterministic roster anchor using tank, leader, DPS, healer and then stable-name priority; only that roster member can become the marker owner when its local eligibility and addon communication are both proven. Peer silence never promotes a lower member, because a missing message cannot prove that another addon client is absent.
 
-When a new pre-combat election starts, managed execution surfaces are immediately parked before the settle window begins. They are reactivated only after the election has settled and this client is again proven to be the owner. If combat starts while ownership is still settling or otherwise unproven, rc54 freezes a passive owner state for that entire combat. Peer heartbeats, roster changes and settle callbacks may prepare the next election, but they cannot change the effective combat owner during that combat.
+When a new pre-combat election starts, managed execution surfaces are immediately parked before the settle window begins. They are reactivated only after the election has settled and this client is again proven to be the owner. If combat starts while ownership is still settling or otherwise unproven, rc55 freezes a passive owner state for that entire combat. Peer heartbeats, roster changes and settle callbacks may prepare the next election, but they cannot change the effective combat owner during that combat.
 
-A failed addon-message send immediately drops group ownership and keeps the client passive. Registration is retried later at safe group/world/heartbeat boundaries; recovery starts a fresh settle window rather than silently restoring an old owner.
+A failed addon-message send immediately drops group ownership and keeps the client passive. Later safe group/world/heartbeat boundaries first revalidate whether the addon prefix is already registered, then retry communication and start a fresh settle window. A temporary throttle or lockdown therefore cannot strand the client merely because Retail reports `DuplicatePrefix` for an already registered prefix.
 
 ## Important execution limits
 
@@ -91,7 +93,7 @@ Active route bodies begin with `/stopmacro [nocombat]`. They intentionally do no
 
 The final `/mpm b ...` callback proves that the correct managed macro reached its callback; it cannot independently prove that every preceding protected `/tm` command succeeded. The addon therefore records **submitted attempts**, not fictional per-unit confirmations. The ~4 second pacing is a conservative local safety window, not an official exact Blizzard reset duration.
 
-Exact-name execution necessarily changes the player's target while the macro walks its targets. rc54 does not add an unverified target-history trick that could weaken fail-closed targeting or push valid three-target bodies over the 255-byte limit.
+Exact-name execution necessarily changes the player's target while the macro walks its targets. rc55 does not add an unverified target-history trick that could weaken fail-closed targeting or push valid three-target bodies over the 255-byte limit.
 
 Manual runtime navigation can still move between prebuilt route pulls during combat. Commands that mutate completion state (`complete` and `reopen`) are held until combat ends.
 
