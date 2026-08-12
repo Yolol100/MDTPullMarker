@@ -132,6 +132,24 @@ local function markRestrictedForActiveContexts(reason)
   return false, state.lastReason
 end
 
+local function combatLogReader()
+  -- Retail 12.1 keeps the underlying C_CombatLog reader even when the old
+  -- CombatLogGetCurrentEventInfo global is not installed by deprecation
+  -- fallbacks. Prefer the current namespace and retain the global only for
+  -- older-compatible clients/mocks.
+  if type(C_CombatLog) == "table" and type(C_CombatLog.GetCurrentEventInfo) == "function" then
+    return C_CombatLog.GetCurrentEventInfo
+  end
+  if type(CombatLogGetCurrentEventInfo) == "function" then return CombatLogGetCurrentEventInfo end
+end
+
+local function combatLogRestrictionState()
+  if type(C_CombatLog) ~= "table" or type(C_CombatLog.IsCombatLogRestricted) ~= "function" then return nil end
+  local ok, restricted = pcall(C_CombatLog.IsCombatLogRestricted)
+  if not ok or isSecret(restricted) or type(restricted) ~= "boolean" then return nil end
+  return restricted
+end
+
 local function routeBindingActive()
   return Addon.MDT and type(Addon.MDT.GetRouteBinding) == "function" and Addon.MDT:GetRouteBinding() ~= nil
 end
@@ -209,11 +227,15 @@ end
 
 function Tracker:OnCombatLogEvent()
   if not state.inCombat then return false, "outside-combat" end
-  if type(CombatLogGetCurrentEventInfo) ~= "function" then
+  if combatLogRestrictionState() == true then
+    return markRestrictedForActiveContexts("combat-log-restricted")
+  end
+  local reader = combatLogReader()
+  if type(reader) ~= "function" then
     return markRestrictedForActiveContexts("combat-log-api-unavailable")
   end
 
-  local ok, _, subevent, _, _, _, _, _, destGUID = pcall(CombatLogGetCurrentEventInfo)
+  local ok, _, subevent, _, _, _, _, _, destGUID = pcall(reader)
   if not ok then
     return markRestrictedForActiveContexts("combat-log-read-failed")
   end
