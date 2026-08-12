@@ -287,7 +287,7 @@ end
 function Tracker:GetCompletionVerdict(pullIndex)
   pullIndex = DataUtils.PositiveInteger(pullIndex) or state.focusPullIndex
   local context = pullIndex and state.contexts[pullIndex] or nil
-  if not context then return nil, "death-tracking-no-context" end
+  if not context then return false, "death-tracking-no-context" end
   if context.status == "complete" and context.complete then return true, "death-complete" end
   if (tonumber(context.ambiguousDeathEvents) or 0) > 0 then return nil, "death-tracking-ambiguous-overlap" end
   if context.status == "tracking" and context.expectedTotal > 0 then
@@ -295,7 +295,7 @@ function Tracker:GetCompletionVerdict(pullIndex)
     if (tonumber(context.readableDeathEvents) or 0) > 0 then return false, "death-incomplete" end
     return false, "death-tracking-no-evidence"
   end
-  return nil, "death-tracking-unavailable"
+  return false, "death-tracking-unavailable"
 end
 
 local function contextState(context)
