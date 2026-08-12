@@ -1,0 +1,39 @@
+## Interface: 120100, 120007
+# WOW_INTERFACE_TARGETS: mainline-beta, mainline-test, mainline
+## AllowLoadGameType: standard
+## Title: MDT Pull Marker
+## Notes: Pull-aware combat marker macros for Mythic Dungeon Tools.
+## Author: Webactueel Team
+## Version: 1.0.0-rc54
+## SavedVariables: MDTPullMarkerDB
+## Dependencies: MythicDungeonTools
+## Category: Dungeons & Raids
+## IconTexture: Interface\TargetingFrame\UI-RaidTargetingIcon_8
+## AddonCompartmentFunc: MDTPullMarker_Open
+## AddonCompartmentFuncOnEnter: MDTPullMarker_CompartmentEnter
+## AddonCompartmentFuncOnLeave: MDTPullMarker_CompartmentLeave
+
+MDTPullMarker.lua
+Core\DataUtils.lua
+Core\ErrorHandler.lua
+Core\Validator.lua
+Core\Migrations.lua
+Core\Database.lua
+Integrations\CreatureNameResolver.lua
+Core\RouteSnapshot.lua
+Core\MarkerMacro.lua
+Core\MarkerPlanner.lua
+Core\RouteMacroPlan.lua
+Runtime\PullController.lua
+Runtime\PullDeathTracker.lua
+Runtime\MarkerOwnership.lua
+Runtime\DungeonSession.lua
+Runtime\SmartMacroManager.lua
+Runtime\MarkerExecutor.lua
+Integrations\MDTAdapter.lua
+Integrations\MDTFocusMarkerBridge.lua
+UI\Configuration.lua
+UI\RuntimeFrame.lua
+Integrations\MDTUI.lua
+Core\Commands.lua
+Core\Events.lua

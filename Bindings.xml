@@ -1,0 +1,3 @@
+<Bindings>
+  <Binding name="CLICK MDTPullMarkerSmartButton:LeftButton" header="MDTPULLMARKER" />
+</Bindings>
