@@ -1,0 +1,61 @@
+name: Apply uploaded fixed addon to main
+
+on:
+  push:
+    branches:
+      - agent/sync-uploaded-fixed-addon
+    paths:
+      - '.sync-upload/mdt-payload-*.b64'
+      - '.github/workflows/apply-uploaded-fixed-addon.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reconstruct verified payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .sync-upload/mdt-payload-*.b64 | base64 -d > /tmp/mdt-upload.tar.gz
+          mkdir -p /tmp/mdt-upload
+          tar -xzf /tmp/mdt-upload.tar.gz -C /tmp/mdt-upload
+      - name: Apply only to expected main
+        shell: bash
+        env:
+          EXPECTED_MAIN: fd82ccc59ce718cfafd7e560278c05b6c81048ef
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          actual="$(git rev-parse origin/main)"
+          test "$actual" = "$EXPECTED_MAIN" || { echo "main moved: $actual" >&2; exit 1; }
+          git checkout -B main origin/main
+          install -m 0644 /tmp/mdt-upload/CHANGELOG.md CHANGELOG.md
+          install -m 0644 /tmp/mdt-upload/COMPATIBILITY.md COMPATIBILITY.md
+          install -m 0644 /tmp/mdt-upload/README.md README.md
+          install -m 0644 /tmp/mdt-upload/Core/Events.lua Core/Events.lua
+          install -m 0644 /tmp/mdt-upload/Core/MarkerPlanner.lua Core/MarkerPlanner.lua
+          install -m 0644 /tmp/mdt-upload/Runtime/MarkerOwnership.lua Runtime/MarkerOwnership.lua
+          install -m 0644 /tmp/mdt-upload/Runtime/PullDeathTracker.lua Runtime/PullDeathTracker.lua
+          test "$(git hash-object CHANGELOG.md)" = "ee0d719cf9a2fb22d31d6f0987fed060c3d98cb1"
+          test "$(git hash-object COMPATIBILITY.md)" = "9e8c2f3f9a26178ac2b617e3e649e1a48ce714ac"
+          test "$(git hash-object README.md)" = "a049814e426f647ef8af9e4bde56625055bffda5"
+          test "$(git hash-object Core/Events.lua)" = "9b24255d952f7182a06d487be745a17645b55380"
+          test "$(git hash-object Core/MarkerPlanner.lua)" = "8d22de35396be3234ed02bf6afb3ab6a78870191"
+          test "$(git hash-object Runtime/MarkerOwnership.lua)" = "7e740dd62cea63333be1d736fefe3cde0b396797"
+          test "$(git hash-object Runtime/PullDeathTracker.lua)" = "e9dde2c8415e45e4a576291d7ce25bf4ab99936d"
+          git add CHANGELOG.md COMPATIBILITY.md README.md Core/Events.lua Core/MarkerPlanner.lua Runtime/MarkerOwnership.lua Runtime/PullDeathTracker.lua
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No changes to apply"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync uploaded fixed add-on"
+          git push origin HEAD:main
