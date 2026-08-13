@@ -1,0 +1,38 @@
+name: Validate source
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: Compile Lua files
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -type f -name '*.lua' -print0 | while IFS= read -r -d '' file; do
+            lua5.1 -e "assert(loadfile(arg[1]))" "$file"
+          done
+      - name: Verify TOC files
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r entry; do
+            case "$entry" in ''|'##'*|'#'*) continue ;; esac
+            entry="${entry//\\//}"
+            test -f "$entry" || { echo "Missing TOC file: $entry" >&2; exit 1; }
+          done < MDTPullMarker.toc
+      - name: Verify retired duplicate sources stay inert
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'Retired' Runtime/PullController.lua
+          grep -F 'Retired' Integrations/MDTUI.lua
+          grep -F 'Retired' UI/Configuration.lua
