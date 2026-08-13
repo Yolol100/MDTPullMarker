@@ -180,7 +180,7 @@ local function buildDeathTracking(snapshotPull)
     available = available,
     expectedTotal = total,
     expectedByNPC = byNPC,
-    mode = available and "npc-death-advisory" or "combat-boundary",
+    mode = available and "npc-death-gated" or "combat-boundary",
   }
 end
 
@@ -333,10 +333,6 @@ local function scoreIsBetter(candidate, current)
   return false
 end
 
--- Macro slots are a byte-budget resource as well as a marker-count resource.
--- Search every canonical distribution across the allowed A/B/C batches. With
--- at most eight unique raid markers this is bounded and small, while allowing
--- long exact names to rebalance instead of blocking an otherwise safe pull.
 local function assignBatches(assignments, pullIndex, routeFingerprint, automaticTargeting, maxBatches)
   maxBatches = DataUtils.PositiveInteger(maxBatches, MAX_BATCHES_PER_PULL) or 2
   if not automaticTargeting then return sequentialBatches(assignments, maxBatches) end
@@ -381,13 +377,10 @@ local function assignBatches(assignments, pullIndex, routeFingerprint, automatic
   end
 
   local function assign(position, highestUsedBatch)
-    if position > count then
-      evaluate()
-      return
-    end
+    if position > count then evaluate() return end
     local assignment = assignments[position]
     local maxChoice = math.min(maxBatches, highestUsedBatch + 1)
-    local firstChoice = position == 1 and 1 or 1
+    local firstChoice = 1
     local lastChoice = position == 1 and 1 or maxChoice
     for batchIndex = firstChoice, lastChoice do
       local batch = batches[batchIndex]
@@ -402,9 +395,7 @@ local function assignBatches(assignments, pullIndex, routeFingerprint, automatic
   end
   assign(1, 0)
 
-  if not bestBatches then
-    return nil, firstNonLengthError or "smart-macro-too-long", smallestFailedMaximum
-  end
+  if not bestBatches then return nil, firstNonLengthError or "smart-macro-too-long", smallestFailedMaximum end
 
   for _, batch in ipairs(bestBatches) do
     for position, assignment in ipairs(batch.assignments) do
@@ -467,9 +458,7 @@ local function buildPull(snapshot, snapshotPull, findings, runningTotal, routeNa
         end
 
         runningTotal = runningTotal + 1
-        local assignment, assignmentError = buildAssignment(
-          enemy, clone, marker, #pullPlan.assignments + 1, sourceNamesVerified
-        )
+        local assignment, assignmentError = buildAssignment(enemy, clone, marker, #pullPlan.assignments + 1, sourceNamesVerified)
         if not assignment then
           finding(findings, "error", assignmentError or "invalid-assignment", path)
           pullPlan.status = "blocked"
@@ -679,18 +668,12 @@ function MarkerPlanner.Build(snapshot, options)
   if snapshot.nativeAssignmentsAvailable ~= true then finding(findings, "warning", "native-marker-data-unavailable", "route") end
 
   for _, item in ipairs(findings) do
-    if item.severity == "error" then
-      plan.summary.errors = plan.summary.errors + 1
-    elseif item.severity == "warning" then
-      plan.summary.warnings = plan.summary.warnings + 1
-    end
+    if item.severity == "error" then plan.summary.errors = plan.summary.errors + 1
+    elseif item.severity == "warning" then plan.summary.warnings = plan.summary.warnings + 1 end
   end
 
-  if plan.summary.errors > 0 then
-    plan.status = "blocked"
-  elseif plan.summary.warnings > 0 then
-    plan.status = "ready-with-warnings"
-  end
+  if plan.summary.errors > 0 then plan.status = "blocked"
+  elseif plan.summary.warnings > 0 then plan.status = "ready-with-warnings" end
   return plan, findings
 end
 

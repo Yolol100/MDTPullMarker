@@ -7,10 +7,12 @@ local PREFIX = "MDTPM_OWNER"
 local PEER_TTL_SECONDS = 18
 local HEARTBEAT_SECONDS = 5
 local SETTLE_SECONDS = 0.8
+local MIN_COMPATIBLE_OWNER_PROTOCOL_RC = 52
 
 local state = {
   initialized = false,
   commAvailable = false,
+  commFailureReason = nil,
   localName = nil,
   localEligible = false,
   owner = nil,
@@ -180,11 +182,30 @@ local function candidateRank(entry)
   return 4
 end
 
-local function peerUsesHeartbeat(peer)
+local function peerReleaseCandidate(peer)
   local version = peer and peer.version
-  if type(version) ~= "string" then return false end
-  local rc = tonumber(version:match("%-rc(%d+)$"))
+  if type(version) ~= "string" then return nil end
+  return tonumber(version:match("%-rc(%d+)$"))
+end
+
+local function peerUsesHeartbeat(peer)
+  local rc = peerReleaseCandidate(peer)
   return rc and rc >= 41 or false
+end
+
+local function peerOwnerProtocolCompatible(peer)
+  local rc = peerReleaseCandidate(peer)
+  return rc and rc >= MIN_COMPATIBLE_OWNER_PROTOCOL_RC or false
+end
+
+local function incompatibleOwnerPeer()
+  local oldestName
+  for _, peer in pairs(state.peers) do
+    if not peerOwnerProtocolCompatible(peer) then
+      if not oldestName or canonical(peer.name) < canonical(oldestName) then oldestName = peer.name end
+    end
+  end
+  return oldestName
 end
 
 local function prunePeers(rosterMap)
@@ -219,12 +240,8 @@ local function recomputeOwner(reason)
     return nil
   end
   if not state.commAvailable then
-    -- In a group, owner election is the safety boundary that prevents multiple
-    -- addon clients from marking simultaneously. Without a working comm channel
-    -- there is no trustworthy single owner, so remain passive instead of
-    -- assuming the local client owns marking.
     state.owner = nil
-    state.ownerReason = "comm-unavailable"
+    state.ownerReason = state.commFailureReason or "comm-unavailable"
     return nil
   end
 
@@ -235,13 +252,13 @@ local function recomputeOwner(reason)
     return nil
   end
   prunePeers(rosterMap)
+  local incompatiblePeerName = incompatibleOwnerPeer()
+  if incompatiblePeerName then
+    state.owner = nil
+    state.ownerReason = "owner-protocol-incompatible-peer"
+    return nil
+  end
 
-  -- A fixed settle period can prove elapsed time, but it cannot prove the
-  -- absence of an undiscovered addon client. Electing only from locally known
-  -- peers can therefore split-brain when messages are delayed or lost. Every
-  -- client can, however, derive the same top-priority member from a completely
-  -- readable Blizzard roster. Only that deterministic roster anchor is allowed
-  -- to own grouped marking; peer silence never promotes another member.
   local candidates = {}
   for _, entry in pairs(rosterMap) do candidates[#candidates + 1] = entry end
 
@@ -264,41 +281,59 @@ end
 
 local function addonMessageCallSucceeded(result)
   if isSecret(result) then return false end
-  -- Current Retail APIs return enum Success == 0. Retain the historical
-  -- boolean true form used by older-compatible clients/mocks.
   return result == true or (type(result) == "number" and result == 0)
+end
+
+local function prefixRegistrationState()
+  if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.IsAddonMessagePrefixRegistered) ~= "function" then return nil end
+  local ok, registered = pcall(C_ChatInfo.IsAddonMessagePrefixRegistered, PREFIX)
+  if not ok or isSecret(registered) or type(registered) ~= "boolean" then return nil end
+  return registered
+end
+
+local function failCommunication(reason)
+  state.commAvailable = false
+  state.commFailureReason = reason or "comm-unavailable"
+  state.owner = nil
+  state.ownerReason = state.commFailureReason
+  state.settlingUntil = 0
+  return false
 end
 
 local function registerCommunication()
   if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.RegisterAddonMessagePrefix) ~= "function" then
-    state.commAvailable = false
-    return false
+    return failCommunication("comm-register-unavailable")
   end
+
+  if prefixRegistrationState() == true then
+    state.commAvailable = true
+    state.commFailureReason = nil
+    return true
+  end
+
   local ok, registered = pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
-  state.commAvailable = ok and addonMessageCallSucceeded(registered)
-  if not state.commAvailable then
-    state.owner = nil
-    state.ownerReason = "comm-unavailable"
+  local registrationSucceeded = ok and addonMessageCallSucceeded(registered)
+  if not registrationSucceeded and ok and type(registered) == "number" and registered == 1 then
+    registrationSucceeded = prefixRegistrationState() == true
   end
-  return state.commAvailable
+  state.commAvailable = registrationSucceeded
+  if not state.commAvailable then return failCommunication("comm-register-failed") end
+  state.commFailureReason = nil
+  return true
 end
 
 local function send(kind)
-  if not state.commAvailable or type(C_ChatInfo) ~= "table" or type(C_ChatInfo.SendAddonMessage) ~= "function" then return false end
+  if not state.commAvailable then return false end
+  if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.SendAddonMessage) ~= "function" then
+    return failCommunication("comm-send-unavailable")
+  end
   local channel = distribution()
-  if not channel then return false end
+  if not channel then return failCommunication("comm-channel-unavailable") end
   state.localEligible = currentEligibility()
   local payload = table.concat({ tostring(kind or "H"), tostring(Addon.Version or "unknown"), state.localEligible and "1" or "0" }, "|")
   local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, payload, channel)
   if not ok or not addonMessageCallSucceeded(result) then
-    -- A thrown/non-success send proves only that the channel is unusable now.
-    -- Drop ownership immediately, then let later group/world/heartbeat boundaries
-    -- retry prefix registration while remaining passive until communication works.
-    state.commAvailable = false
-    state.owner = nil
-    state.ownerReason = "comm-unavailable"
-    state.settlingUntil = 0
-    return false
+    return failCommunication("comm-send-failed")
   end
   return true
 end
@@ -312,11 +347,6 @@ local function refreshExecutor(reason)
 end
 
 local function parkUnsettledExecution(reason)
-  -- The callback at the end of an MPM macro is too late to stop protected /tm
-  -- lines that are already in an active body. As soon as a pre-combat election
-  -- becomes unsettled, rewrite every managed execution surface to its safe idle
-  -- form. Combat-frozen owners remain unchanged because protected macros cannot
-  -- and must not be mutated after combat begins.
   if state.combatFrozen then return false, "combat-owner-frozen" end
   if Addon.MarkerExecutor and type(Addon.MarkerExecutor.OnInstructionChanged) == "function" then
     return Addon.MarkerExecutor:OnInstructionChanged("marker-owner:"..tostring(reason or "election-unsettled"))
@@ -344,8 +374,6 @@ local function scheduleHeartbeat()
     else
       recomputeOwner("heartbeat")
       if grouped == true and state.commAvailable then
-        -- rc40 understands H and responds with R but has no periodic heartbeat of its own.
-        -- Ping with H while a legacy peer is present; rc41+ groups use the quieter B lease.
         send(hasLegacyPeer() and "H" or "B")
       end
     end
@@ -476,7 +504,13 @@ function Ownership:IsOwner()
   if not owner and (state.ownerReason == "group-state-unavailable"
     or state.ownerReason == "group-roster-unavailable"
     or state.ownerReason == "group-roster-incomplete"
-    or state.ownerReason == "comm-unavailable")
+    or state.ownerReason == "comm-unavailable"
+    or state.ownerReason == "comm-register-unavailable"
+    or state.ownerReason == "comm-register-failed"
+    or state.ownerReason == "comm-send-unavailable"
+    or state.ownerReason == "comm-channel-unavailable"
+    or state.ownerReason == "comm-send-failed"
+    or state.ownerReason == "owner-protocol-incompatible-peer")
   then
     return false, "marker-owner-unavailable", nil
   end
@@ -490,14 +524,16 @@ end
 
 function Ownership:GetState()
   local owner = effectiveOwner()
-  local peerCount, legacyPeerCount = 0, 0
+  local peerCount, legacyPeerCount, incompatiblePeerCount = 0, 0, 0
   for _, peer in pairs(state.peers) do
     peerCount = peerCount + 1
     if not peerUsesHeartbeat(peer) then legacyPeerCount = legacyPeerCount + 1 end
+    if not peerOwnerProtocolCompatible(peer) then incompatiblePeerCount = incompatiblePeerCount + 1 end
   end
   return {
     prefix = PREFIX,
     commAvailable = state.commAvailable,
+    commFailureReason = state.commFailureReason,
     localName = state.localName,
     localEligible = state.localEligible,
     owner = owner,
@@ -506,6 +542,8 @@ function Ownership:GetState()
     electionPending = inGroup() == true and state.commAvailable and not state.combatFrozen and now() < state.settlingUntil or false,
     peerCount = peerCount,
     legacyPeerCount = legacyPeerCount,
+    incompatiblePeerCount = incompatiblePeerCount,
+    minimumCompatibleOwnerProtocolRC = MIN_COMPATIBLE_OWNER_PROTOCOL_RC,
     combatFrozen = state.combatFrozen,
     heartbeatSeconds = HEARTBEAT_SECONDS,
     peerTTLSeconds = PEER_TTL_SECONDS,

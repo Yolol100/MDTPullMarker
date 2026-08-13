@@ -56,8 +56,8 @@ end
 local function normalizeEnemyMetadataCache(raw)
   if type(raw) ~= "table" or DataUtils.IsSecret(raw) then return nil end
   local dungeonIndex = DataUtils.PositiveInteger(raw.dungeonIndex)
-  local mdtVersion = DataUtils.SafeString(raw.mdtVersion, 40, true)
-  local locale = DataUtils.SafeString(raw.locale, 16, true)
+  local mdtVersion = DataUtils.ValidatedString(raw.mdtVersion, 40, true)
+  local locale = DataUtils.ValidatedString(raw.locale, 16, true)
   if not dungeonIndex or not mdtVersion or not locale or type(raw.enemies) ~= "table" or DataUtils.IsSecret(raw.enemies) then return nil end
   local enemies, count = {}, 0
   for enemyIndex, rawEnemy in pairs(raw.enemies) do
@@ -77,34 +77,33 @@ local function normalizeEnemyMetadataCache(raw)
   local dungeonName = exactMetadataName(raw.dungeonName)
   local challengeMapID = DataUtils.PositiveInteger(raw.challengeMapID)
   return {
-    dungeonIndex=dungeonIndex,
-    dungeonName=dungeonName,
-    challengeMapID=challengeMapID,
-    mdtVersion=mdtVersion,
-    locale=locale,
-    targetNamesVerified=raw.targetNamesVerified==true,
-    enemies=enemies,
+    dungeonIndex = dungeonIndex,
+    dungeonName = dungeonName,
+    challengeMapID = challengeMapID,
+    mdtVersion = mdtVersion,
+    locale = locale,
+    targetNamesVerified = raw.targetNamesVerified == true,
+    enemies = enemies,
   }
 end
 
 local function normalizeRouteBinding(raw)
   if type(raw) ~= "table" or DataUtils.IsSecret(raw) then return nil end
-  local routeKey = DataUtils.SafeString(raw.routeKey, 120, true)
+  local routeKey = DataUtils.ValidatedString(raw.routeKey, 120, true)
   local dungeonIndex = DataUtils.PositiveInteger(raw.dungeonIndex, 1000)
   if not routeKey or routeKey == "" or not dungeonIndex then return nil end
   return {
     routeKey = routeKey,
-    presetUID = DataUtils.SafeString(raw.presetUID, 120, true),
+    presetUID = DataUtils.ValidatedString(raw.presetUID, 120, true),
     presetName = DataUtils.SafeString(raw.presetName, 240, true),
     presetIndex = DataUtils.PositiveInteger(raw.presetIndex, 1000),
     dungeonIndex = dungeonIndex,
     dungeonName = DataUtils.SafeString(raw.dungeonName, 240, true),
     challengeMapID = DataUtils.PositiveInteger(raw.challengeMapID),
-    boundFingerprint = DataUtils.SafeString(raw.boundFingerprint, 120, true),
-    mdtVersion = DataUtils.SafeString(raw.mdtVersion, 40, true),
+    boundFingerprint = DataUtils.ValidatedString(raw.boundFingerprint, 120, true),
+    mdtVersion = DataUtils.ValidatedString(raw.mdtVersion, 40, true),
   }
 end
-
 
 local function normalizeRouteBindings(raw)
   local result = {}
@@ -151,23 +150,42 @@ local function normalizeGlobal(raw)
   return result
 end
 
+local function normalizeMigration(raw)
+  raw = type(raw) == "table" and not DataUtils.IsSecret(raw) and raw or {}
+  local retired = DataUtils.SafeNumber(raw.retiredLegacyRoutes) or 0
+  if retired < 0 then retired = 0 end
+  retired = math.floor(retired)
+  return {
+    lastFrom = DataUtils.SafeNumber(raw.lastFrom),
+    lastTo = DataUtils.SafeNumber(raw.lastTo),
+    lastStatus = DataUtils.SafeString(raw.lastStatus, 40, true),
+    completedAt = DataUtils.SafeString(raw.completedAt, 40, true),
+    retiredLegacyRoutes = retired,
+  }
+end
+
 local function normalizeDatabase(candidate)
-  candidate = type(candidate) == "table" and candidate or {}
-  candidate.schemaVersion = Migrations.CurrentSchema
-  candidate.global = normalizeGlobal(candidate.global)
-  candidate.enemyMetadataCache = normalizeEnemyMetadataCache(candidate.enemyMetadataCache)
-  candidate.routeBindings = normalizeRouteBindings(candidate.routeBindings)
-  candidate.lastRouteDungeonIndex = DataUtils.PositiveInteger(candidate.lastRouteDungeonIndex, 1000)
-  if candidate.lastRouteDungeonIndex and not candidate.routeBindings[candidate.lastRouteDungeonIndex] then
-    candidate.lastRouteDungeonIndex = nil
+  candidate = type(candidate) == "table" and not DataUtils.IsSecret(candidate) and candidate or {}
+  local routeBindings = normalizeRouteBindings(candidate.routeBindings)
+  local lastRouteDungeonIndex = DataUtils.PositiveInteger(candidate.lastRouteDungeonIndex, 1000)
+  if lastRouteDungeonIndex and not routeBindings[lastRouteDungeonIndex] then lastRouteDungeonIndex = nil end
+  local backups = {}
+  if type(candidate.backups) == "table" and not DataUtils.IsSecret(candidate.backups) then
+    for index = 1, math.min(#candidate.backups, Validator.MaxBackups) do backups[index] = candidate.backups[index] end
   end
-  candidate.routeBinding = nil
-  candidate.routes = nil
-  candidate.quarantine = nil
-  candidate.backups = type(candidate.backups) == "table" and candidate.backups or {}
-  while #candidate.backups > Validator.MaxBackups do table.remove(candidate.backups) end
-  candidate.migration = type(candidate.migration) == "table" and candidate.migration or {}
-  return candidate
+
+  -- Schema 12 is a closed active surface. Construct a fresh allowlisted table on
+  -- every initialization/transaction so legacy or foreign top-level junk cannot
+  -- survive one extra SavedVariables write merely because the input was old.
+  return {
+    schemaVersion = Migrations.CurrentSchema,
+    global = normalizeGlobal(candidate.global),
+    enemyMetadataCache = normalizeEnemyMetadataCache(candidate.enemyMetadataCache),
+    routeBindings = routeBindings,
+    lastRouteDungeonIndex = lastRouteDungeonIndex,
+    backups = backups,
+    migration = normalizeMigration(candidate.migration),
+  }
 end
 
 function Database.Initialize(rawDB)
@@ -352,7 +370,6 @@ function Database.ResetUIPositions()
     return true
   end)
 end
-
 
 function Database.GetEnemyMetadataCache()
   local cache = db and db.enemyMetadataCache

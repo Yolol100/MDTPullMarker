@@ -91,7 +91,7 @@ local function handleEvent(_, event, ...)
       if not updated then
         Addon.Log("WARN", "First-run status could not be saved: "..tostring(updateError), false)
       end
-      Addon.Chat("Ready. MDT Pull Marker activates automatically when you enter a dungeon.")
+      Addon.Chat((Addon.L and Addon.L.READY_AUTOMATIC) or "Ready. MDT Pull Marker activates automatically when you enter a dungeon.")
     end
   elseif event == "CHAT_MSG_ADDON" then
     Addon.MarkerOwnership:OnAddonMessage(...)
@@ -99,8 +99,10 @@ local function handleEvent(_, event, ...)
     Addon.PullDeathTracker:OnCombatStarted()
     Addon.MarkerOwnership:OnCombatStarted()
   elseif SESSION_EVENTS[event] then
-    if event == "PLAYER_ENTERING_WORLD" then Addon.MarkerOwnership:OnWorldChanged(event) end
+    -- Invalidate/park the old dungeon context before ownership or any delayed
+    -- enrichment can observe it as executable.
     Addon.DungeonSession:OnEvent(event)
+    if event == "PLAYER_ENTERING_WORLD" then Addon.MarkerOwnership:OnWorldChanged(event) end
   elseif event == "READY_CHECK" then
     Addon.MDTFocusMarkerBridge:Refresh()
     refreshVisibleUI()

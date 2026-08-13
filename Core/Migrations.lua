@@ -6,6 +6,8 @@ Addon.Migrations = Migrations
 local DataUtils = Addon.DataUtils
 local CURRENT_SCHEMA = 12
 local MAX_BACKUPS = 2
+local MAX_BACKUP_DEPTH = 14
+local MAX_BACKUP_ENTRIES = 30000
 
 local function timestamp()
   if type(date) == "function" then return date("%Y-%m-%d %H:%M:%S") end
@@ -43,15 +45,34 @@ function Migrations.DefaultDatabase()
   }
 end
 
+local function copyArchivedBackups(rawBackups)
+  local result = {}
+  if type(rawBackups) ~= "table" or DataUtils.IsSecret(rawBackups) then return result end
+  for index = 1, math.min(#rawBackups, MAX_BACKUPS) do
+    local source = rawBackups[index]
+    if type(source) == "table" and not DataUtils.IsSecret(source) and type(source.data) == "table" then
+      local data = DataUtils.DeepCopy(source.data, { maxDepth = MAX_BACKUP_DEPTH, maxEntries = MAX_BACKUP_ENTRIES })
+      if data then
+        result[#result + 1] = {
+          createdAt = DataUtils.SafeString(source.createdAt, 40, true) or "unknown-time",
+          schemaVersion = DataUtils.SafeNumber(source.schemaVersion) or 0,
+          data = data,
+        }
+      end
+    end
+  end
+  return result
+end
+
 local function copyDatabaseWithoutBackupPayload(rawDB, maxDepth, maxEntries)
   local source = {}
   for key, value in pairs(rawDB or {}) do if key ~= "backups" then source[key] = value end end
   local copied, copyError = DataUtils.DeepCopy(source, { maxDepth = maxDepth or 14, maxEntries = maxEntries or 30000 })
   if not copied then return nil, copyError end
-  copied.backups = {}
-  if type(rawDB and rawDB.backups) == "table" and not DataUtils.IsSecret(rawDB.backups) then
-    for index = 1, math.min(#rawDB.backups, MAX_BACKUPS) do copied.backups[index] = rawDB.backups[index] end
-  end
+  -- Backups are archival only, but they still live in SavedVariables. Copy them
+  -- through the same bounded primitive/table model so corrupt or cyclic archival
+  -- payload cannot stay attached to an otherwise healthy current database.
+  copied.backups = copyArchivedBackups(rawDB and rawDB.backups)
   return copied
 end
 
@@ -144,7 +165,6 @@ local function migrateFiveToSix(rawDB)
   return rawDB
 end
 
-
 local function migrateSixToSeven(rawDB)
   rawDB.global = type(rawDB.global) == "table" and rawDB.global or {}
   rawDB.global.autoOpenRuntime = false
@@ -152,38 +172,27 @@ local function migrateSixToSeven(rawDB)
   return rawDB
 end
 
-
 local function migrateSevenToEight(rawDB)
   rawDB.global = type(rawDB.global) == "table" and rawDB.global or {}
-  -- Keep the legacy setting enabled for migration/bridge compatibility. Current bulk
-  -- execution uses set-if-unmarked for all automatic marker operations.
   rawDB.global.preserveExistingMarkers = true
   rawDB.schemaVersion = 8
   return rawDB
 end
 
-
-
 local function migrateEightToNine(rawDB)
   rawDB.global = type(rawDB.global) == "table" and rawDB.global or {}
-  -- rc37 activates the runtime automatically when a usable dungeon session starts.
-  -- Users can still disable this later with /mpm autoopen off.
   rawDB.global.autoOpenRuntime = true
   rawDB.schemaVersion = 9
   return rawDB
 end
 
 local function migrateNineToTen(rawDB)
-  -- rc45 can bind MDTPullMarker to one explicit MDT route. Existing installs
-  -- start unbound and keep the rc44 current-route behavior until the user binds.
   rawDB.routeBinding = nil
   rawDB.schemaVersion = 10
   return rawDB
 end
 
 local function migrateTenToEleven(rawDB)
-  -- rc46 stores one independent route binding per MDT dungeon. Preserve an
-  -- existing rc45 binding instead of forcing the user to bind it again.
   rawDB.routeBindings = type(rawDB.routeBindings) == "table" and rawDB.routeBindings or {}
   local legacy = type(rawDB.routeBinding) == "table" and rawDB.routeBinding or nil
   local dungeonIndex = legacy and DataUtils.PositiveInteger(legacy.dungeonIndex, 1000) or nil
@@ -197,9 +206,6 @@ local function migrateTenToEleven(rawDB)
 end
 
 local function migrateElevenToTwelve(rawDB)
-  -- These legacy UI preferences no longer control any runtime path: route/dungeon
-  -- matching is a mandatory safety invariant and runtime windows are always movable.
-  -- Retire the stale keys explicitly instead of carrying dead settings forever.
   rawDB.global = type(rawDB.global) == "table" and rawDB.global or {}
   rawDB.global.runtimeLocked = nil
   rawDB.global.warnRouteMismatch = nil
@@ -230,9 +236,6 @@ function Migrations.Run(rawDB)
   local originalVersion = DataUtils.SafeNumber(rawDB.schemaVersion) or 0
   if originalVersion > CURRENT_SCHEMA then return nil, "future-schema" end
   if originalVersion == CURRENT_SCHEMA then
-    -- The current schema has a closed active surface. Ignore unknown top-level junk so a
-    -- stale/corrupt foreign field cannot exhaust the bounded copy and disable
-    -- an otherwise valid installation. Migration backups remain archival.
     local currentSource = {
       schemaVersion = rawDB.schemaVersion,
       global = rawDB.global,

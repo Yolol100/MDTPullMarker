@@ -104,8 +104,6 @@ function Manager:ManagedMacroIconMatches(icon)
 end
 
 function Manager:IsRecognizedManagedBody(body, icon)
-  -- Reserved names alone never prove ownership. Require both a recognized body
-  -- and the dedicated addon icon before editing or deleting a macro.
   if not self:ManagedMacroIconMatches(icon) then return false end
   if MarkerMacro.IsRecognizedBody(body) then return true end
   return body == LEGACY_SAFE_IDLE_MACRO
@@ -117,8 +115,6 @@ function Manager:EditManagedMacro(index, body, expectedName)
   if not ok then return nil, "edit-macro-failed:"..tostring(editResult) end
   if isSecret(editResult) then return nil, "edit-macro-returned-secret" end
 
-  -- EditMacro return values have varied historically. Re-read the protected
-  -- resource and verify body + icon instead of trusting the return value.
   local currentName, currentIcon, currentBody = safeMacroRead(GetMacroInfo, "macro-info-read-failed", index)
   if currentName == nil then return nil, currentIcon or "macro-info-read-failed:missing" end
   if type(currentName) ~= "string" then return nil, "edit-macro-verification-name-unavailable" end
@@ -133,9 +129,6 @@ end
 
 function Manager:EnumerateMacroName(name)
   local normalizedName = tostring(name or ""):lower()
-
-  -- GetMacroIndexByName returns only one duplicate. Enumerate both macro spaces
-  -- when possible so a same-name personal macro can never be silently hidden.
   if type(GetNumMacros) == "function" and type(GetMacroInfo) == "function" then
     local accountLimit = accountMacroLimit()
     if not accountLimit then return nil, nil, "macro-account-boundary-unavailable" end
@@ -154,11 +147,6 @@ function Manager:EnumerateMacroName(name)
     end
     return matches, accountCount, nil
   end
-
-  -- Name-only lookup is not sufficient ownership proof because duplicate macro
-  -- names may exist in account and character spaces. Supported Midnight clients
-  -- expose full enumeration; if that enumeration is unavailable, fail closed
-  -- rather than risking an edit/create/delete against a hidden personal macro.
   return nil, nil, "macro-enumeration-unavailable"
 end
 
@@ -178,8 +166,6 @@ function Manager:EnumerateAllMacros()
   local function append(index)
     local name, icon, body = safeMacroRead(GetMacroInfo, "macro-info-read-failed", index)
     if name == nil then
-      -- Sparse slots are valid in mocked/client macro spaces; only propagate a
-      -- real read error, not a missing slot.
       if type(icon) == "string" and icon:find("macro%-info%-read%-failed") then return nil, icon end
       return true
     end
@@ -222,7 +208,6 @@ function Manager:GetSmartMacroIndex(macroName)
 end
 
 function Manager:CreateSmartMacro(macroName, body)
-  -- Recheck directly before creation to close the same-name race.
   local existing, existingError = self:GetSmartMacroIndex(macroName)
   if existing == nil then return nil, existingError end
   if existing > 0 then return existing, "existing" end
@@ -240,10 +225,6 @@ function Manager:CreateSmartMacro(macroName, body)
     failures[#failures + 1] = location..":"..tostring(createError)
   end
 
-  -- Prefer account-wide storage when its count is readable and below the known
-  -- account boundary. If unavailable/full, attempt character storage directly.
-  -- Do not hard-code a character capacity: CreateMacro is the authority and a
-  -- failed protected call is handled below.
   if accountCount < accountLimit then
     local created, location = tryCreate(false, "account")
     if created then return created, location end
@@ -267,8 +248,6 @@ function Manager:RetireManagedMacros(managed, macroName)
     if not ok then return false, "delete-macro-failed:"..tostring(deleteError) end
   end
 
-  -- Deleting a macro can shift later indices. Verify by reserved name after all
-  -- deletes rather than trusting DeleteMacro's return value or stale indices.
   local remaining, _, enumerateError = self:EnumerateMacroName(macroName)
   if not remaining then return false, enumerateError or "macro-enumeration-failed-after-delete" end
   if #remaining > 0 then return false, "managed-macro-retirement-unverified:"..tostring(macroName) end
@@ -279,11 +258,6 @@ end
 
 function Manager:RetireRecognizedReservedMacros(reason)
   if type(DeleteMacro) ~= "function" then return false, "delete-macro-unavailable" end
-
-  -- Fail closed across the whole reserved pair. A refresh error on MDTPM2 must
-  -- never leave an older MDTPM1 body executable (or vice versa). Only resources
-  -- whose exact reserved name, recognized body and dedicated icon prove addon
-  -- ownership are eligible; personal same-name macros are deliberately skipped.
   local managedByIndex = {}
   for _, macroName in ipairs(self.macroNames) do
     local matches, _, enumerateError = self:EnumerateMacroName(macroName)
@@ -309,8 +283,6 @@ function Manager:RetireRecognizedReservedMacros(reason)
     if not ok then return false, "delete-macro-failed:"..tostring(deleteError) end
   end
 
-  -- Verify ownership, not mere name absence: a personal collision is allowed to
-  -- remain, but no recognized addon-managed reserved macro may survive cleanup.
   for _, macroName in ipairs(self.macroNames) do
     local matches, _, enumerateError = self:EnumerateMacroName(macroName)
     if not matches then return false, enumerateError or "macro-enumeration-failed-after-pair-retirement" end
@@ -331,6 +303,44 @@ function Manager:RetireRecognizedReservedMacros(reason)
     self.log("WARN", "Managed marker macros were retired after a pair-level safety failure: "..tostring(reason or "unknown"), false)
   end
   return true
+end
+
+function Manager:ParkAllManagedExecution(reason)
+  if type(InCombatLockdown) == "function" and InCombatLockdown() then
+    self.pendingRefresh = true
+    return false, "in-combat"
+  end
+  if type(EditMacro) ~= "function" then return false, "edit-macro-unavailable" end
+  local entries, enumerateError = self:EnumerateAllMacros()
+  if not entries then return false, enumerateError end
+  local reserved = {}
+  for _, name in ipairs(self.macroNames or {}) do reserved[tostring(name):lower()] = true end
+  local parked = 0
+  for _, entry in ipairs(entries) do
+    local name = type(entry.name) == "string" and entry.name or ""
+    local normalized = name:lower()
+    local inScope = reserved[normalized] == true or self:IsRouteMacroName(name)
+    if inScope and self:IsRecognizedManagedBody(entry.body, entry.icon)
+      and entry.body ~= MarkerMacro.SAFE_IDLE_MACRO then
+      local edited, editError = self:EditManagedMacro(entry.index, MarkerMacro.SAFE_IDLE_MACRO, name)
+      if not edited then return false, "park-managed-execution-failed:"..tostring(name)..":"..tostring(editError) end
+      parked = parked + 1
+    end
+  end
+
+  local verify, verifyError = self:EnumerateAllMacros()
+  if not verify then return false, verifyError end
+  for _, entry in ipairs(verify) do
+    local name = type(entry.name) == "string" and entry.name or ""
+    local normalized = name:lower()
+    local inScope = reserved[normalized] == true or self:IsRouteMacroName(name)
+    if inScope and self:IsRecognizedManagedBody(entry.body, entry.icon)
+      and entry.body ~= MarkerMacro.SAFE_IDLE_MACRO then
+      return false, "managed-execution-parking-unverified:"..tostring(name)..":"..tostring(entry.index)
+    end
+  end
+  if parked > 0 then self.log("INFO", "Managed marker execution parked: "..tostring(reason or "execution-invalidated"), false) end
+  return true, parked
 end
 
 function Manager:ParkRecognizedRouteMacros(reason, keepNames)
@@ -356,9 +366,6 @@ function Manager:ParkRecognizedRouteMacros(reason, keepNames)
     end
   end
 
-  -- Verify that every managed route macro outside the keep-set is inert. A
-  -- personal MPM### macro is intentionally ignored because ownership is not
-  -- proven by its name alone.
   local remaining, verifyError = self:EnumerateAllMacros()
   if not remaining then return false, verifyError end
   for _, entry in ipairs(remaining) do
@@ -378,9 +385,6 @@ end
 function Manager:FailCloseRouteMacros(reason)
   local parked, parkResult = self:ParkRecognizedRouteMacros(reason or "route-fail-close")
   if parked then return true, "parked", parkResult end
-
-  -- Parking is preferred because it preserves action-bar references. Deletion is
-  -- only the emergency fallback when an active managed body cannot be made inert.
   local retired, retireError = self:RetireRecognizedRouteMacros((reason or "route-fail-close")..":park-failed")
   if retired then return true, "retired-after-park-failed", retireError end
   return false, nil, tostring(parkResult)..":"..tostring(retireError)
@@ -460,6 +464,25 @@ function Manager:GetNamedBodyStatus(macroName, desiredBody)
   }
 end
 
+function Manager:PreflightNamedMacro(macroName, matches)
+  local managed = {}
+  for _, rawIndex in ipairs(matches or {}) do
+    local index = tonumber(rawIndex)
+    if index and index > 0 then
+      local currentName, currentIcon, currentBody = safeMacroRead(GetMacroInfo, "macro-info-read-failed", index)
+      if currentName == nil then return nil, currentIcon or "macro-info-read-failed:missing" end
+      if type(currentName) ~= "string" or currentName:lower() ~= tostring(macroName):lower() then
+        return nil, "managed-macro-name-mismatch:"..tostring(macroName)..":"..tostring(index)
+      end
+      if not self:IsRecognizedManagedBody(currentBody, currentIcon) then
+        return nil, "reserved-macro-name-conflict:"..tostring(macroName)..":"..tostring(index)
+      end
+      managed[#managed + 1] = { index = index, icon = currentIcon, body = currentBody }
+    end
+  end
+  return managed
+end
+
 function Manager:RefreshDescriptorSet(descriptors, reason, pickupName, createIfMissing)
   if type(InCombatLockdown) == "function" and InCombatLockdown() then
     self.pendingRefresh = true
@@ -485,8 +508,6 @@ function Manager:RefreshDescriptorSet(descriptors, reason, pickupName, createIfM
   end
   table.sort(ordered, function(left, right) return tostring(left.name) < tostring(right.name) end)
 
-  -- Discover every desired-name collision before mutating anything. A personal
-  -- MPM###A/B macro is never edited or deleted.
   for _, descriptor in ipairs(ordered) do
     local matches, _, enumerateError = self:EnumerateMacroName(descriptor.name)
     if not matches then return nil, enumerateError or "macro-enumeration-failed" end
@@ -551,9 +572,6 @@ function Manager:RefreshDescriptorSet(descriptors, reason, pickupName, createIfM
     end
   end
 
-  -- A route edit can reduce its pull/macro count. Keep old managed macro slots
-  -- inert instead of deleting them so existing action-bar references survive a
-  -- dungeon/route switch. Unrelated similarly named personal macros remain.
   local keepNames = {}
   for name in pairs(desiredByName) do keepNames[name] = true end
   local staleOK, staleError = self:ParkRecognizedRouteMacros("stale-route-macros", keepNames)
@@ -563,8 +581,6 @@ function Manager:RefreshDescriptorSet(descriptors, reason, pickupName, createIfM
     return nil, staleError
   end
 
-  -- Verify exactly what will be shipped to the action bars, rather than trusting
-  -- EditMacro/CreateMacro return values.
   for _, result in ipairs(results) do
     if result.index then
       local status, statusError = self:GetNamedBodyStatus(result.name, result.descriptor.body)
@@ -595,9 +611,7 @@ function Manager:GetDescriptorSetStatus(descriptors)
     if type(descriptor) == "table" and self:IsRouteMacroName(descriptor.name) then
       desiredNames[descriptor.name:lower()] = true
       local status, statusError = self:GetNamedBodyStatus(descriptor.name, descriptor.body)
-      if not status then
-        status = { name = descriptor.name, exists = false, current = false, error = statusError }
-      end
+      if not status then status = { name = descriptor.name, exists = false, current = false, error = statusError } end
       statuses[#statuses + 1] = status
       if status.current then currentCount = currentCount + 1 end
       if status.conflict then conflictCount = conflictCount + 1 end
@@ -612,11 +626,8 @@ function Manager:GetDescriptorSetStatus(descriptors)
       if self:IsRouteMacroName(entry.name) and not desiredNames[normalized]
         and self:IsRecognizedManagedBody(entry.body, entry.icon) then
         staleCount = staleCount + 1
-        if entry.body == MarkerMacro.SAFE_IDLE_MACRO or entry.body == LEGACY_SAFE_IDLE_MACRO then
-          parkedCount = parkedCount + 1
-        else
-          staleActiveCount = staleActiveCount + 1
-        end
+        if entry.body == MarkerMacro.SAFE_IDLE_MACRO or entry.body == LEGACY_SAFE_IDLE_MACRO then parkedCount = parkedCount + 1
+        else staleActiveCount = staleActiveCount + 1 end
       end
     end
   end
@@ -633,29 +644,9 @@ function Manager:GetDescriptorSetStatus(descriptors)
   }
 end
 
-function Manager:PreflightNamedMacro(macroName, matches)
-  local managed = {}
-  for _, rawIndex in ipairs(matches or {}) do
-    local index = tonumber(rawIndex)
-    if index and index > 0 then
-      local currentName, currentIcon, currentBody = safeMacroRead(GetMacroInfo, "macro-info-read-failed", index)
-      if currentName == nil then return nil, currentIcon or "macro-info-read-failed:missing" end
-      if type(currentName) ~= "string" or currentName:lower() ~= tostring(macroName):lower() then
-        return nil, "managed-macro-name-mismatch:"..tostring(macroName)..":"..tostring(index)
-      end
-      if not self:IsRecognizedManagedBody(currentBody, currentIcon) then
-        return nil, "reserved-macro-name-conflict:"..tostring(macroName)..":"..tostring(index)
-      end
-      managed[#managed + 1] = { index = index, icon = currentIcon, body = currentBody }
-    end
-  end
-  return managed
-end
-
 function Manager:RefreshNamed(macroName, batchIndex, reason, createIfMissing)
   local body, bodyWarning = self.desiredBody(batchIndex)
   if not body then return nil, bodyWarning end
-
   local matches, _, enumerateError = self:EnumerateMacroName(macroName)
   if not matches then return nil, enumerateError or "macro-enumeration-failed", bodyWarning end
   if #matches == 0 then
@@ -665,12 +656,8 @@ function Manager:RefreshNamed(macroName, batchIndex, reason, createIfMissing)
     matches = { tonumber(created) }
     self.log("INFO", tostring(macroName).." created/resolved in "..tostring(locationOrError).." macro space.", false)
   end
-
-  -- Preflight all duplicates before changing any resource. This keeps refresh
-  -- transactional when a managed and personal same-name macro coexist.
   local managed, preflightError = self:PreflightNamedMacro(macroName, matches)
   if not managed then return nil, preflightError, bodyWarning end
-
   local preferred = self:ChoosePreferredMacroIndex(matches)
   for _, entry in ipairs(managed) do
     if entry.body ~= body or not self:ManagedMacroIconMatches(entry.icon) then
@@ -682,7 +669,6 @@ function Manager:RefreshNamed(macroName, batchIndex, reason, createIfMissing)
       end
     end
   end
-
   self.log("DEBUG", tostring(macroName).." refreshed: "..tostring(reason or "unspecified"), false)
   return preferred, nil, bodyWarning
 end
@@ -698,9 +684,6 @@ function Manager:RefreshAll(reason, pickupIndex, createIfMissing)
     return nil, "macro-api-unavailable"
   end
 
-  -- Treat the two reserved names as one transaction. Discover every existing
-  -- collision before editing or creating either macro, so MDTPM1 cannot be
-  -- partially refreshed when MDTPM2 is an unrelated personal macro (or vice versa).
   for _, macroName in ipairs(self.macroNames) do
     local matches, _, enumerateError = self:EnumerateMacroName(macroName)
     if not matches then return nil, enumerateError or "macro-enumeration-failed" end
@@ -723,12 +706,7 @@ function Manager:RefreshAll(reason, pickupIndex, createIfMissing)
       if retired then return nil, pairError end
       return nil, tostring(pairError)..":"..tostring(retireError)
     end
-    results[batchIndex] = {
-      name = macroName,
-      index = index or nil,
-      missing = index == false,
-      warning = warning,
-    }
+    results[batchIndex] = { name = macroName, index = index or nil, missing = index == false, warning = warning }
   end
 
   pickupIndex = tonumber(pickupIndex)
@@ -765,10 +743,7 @@ function Manager:GetStatus(batchIndex)
         allRecognized = false
         break
       end
-      if tonumber(macroIndex) == tonumber(index) then
-        currentIcon = second
-        currentBody = macroBody
-      end
+      if tonumber(macroIndex) == tonumber(index) then currentIcon = second currentBody = macroBody end
       if macroBody ~= desiredBody or not self:ManagedMacroIconMatches(second) then allCurrent = false end
       if not self:IsRecognizedManagedBody(macroBody, second) then
         allRecognized = false
@@ -779,21 +754,15 @@ function Manager:GetStatus(batchIndex)
 
   local conflict = conflictIndex ~= nil
   local statusError = enumerateError or readError
-  if not statusError and conflict then
-    statusError = "reserved-macro-name-conflict:"..tostring(macroName)..":"..tostring(conflictIndex)
-  end
+  if not statusError and conflict then statusError = "reserved-macro-name-conflict:"..tostring(macroName)..":"..tostring(conflictIndex) end
 
   local boundKey = "not assigned"
   local bindingError
   if type(GetBindingKey) == "function" then
     local ok, key1, key2 = pcall(GetBindingKey, "CLICK "..self.buttonName..":LeftButton")
-    if not ok then
-      bindingError = "binding-read-failed:"..tostring(key1)
-    elseif isSecret(key1) or isSecret(key2) then
-      bindingError = "binding-read-secret"
-    else
-      boundKey = key1 and key2 and (key1..", "..key2) or key1 or key2 or boundKey
-    end
+    if not ok then bindingError = "binding-read-failed:"..tostring(key1)
+    elseif isSecret(key1) or isSecret(key2) then bindingError = "binding-read-secret"
+    else boundKey = key1 and key2 and (key1..", "..key2) or key1 or key2 or boundKey end
   else
     bindingError = "binding-api-unavailable"
   end

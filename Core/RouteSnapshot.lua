@@ -11,22 +11,12 @@ local MAX_CLONES_PER_ENEMY = 1000
 local MAX_TOTAL_CLONES = 20000
 local MAX_TOTAL_ENEMIES = 20000
 local MAX_SNAPSHOT_COPY_ENTRIES = 500000
+local MAX_INDEX_SCAN_MULTIPLIER = 4
 
-local function isSecret(value)
-  return DataUtils.IsSecret(value)
-end
-
-local function safeString(value)
-  return DataUtils.SafeString(value, 1024, true)
-end
-
-local function safeNumber(value)
-  return DataUtils.SafeNumber(value)
-end
-
-local function positiveInteger(value)
-  return DataUtils.PositiveInteger(value)
-end
+local function isSecret(value) return DataUtils.IsSecret(value) end
+local function safeString(value) return DataUtils.SafeString(value, 1024, true) end
+local function safeNumber(value) return DataUtils.SafeNumber(value) end
+local function positiveInteger(value) return DataUtils.PositiveInteger(value) end
 
 local function copyPrimitive(value)
   if isSecret(value) then return nil end
@@ -34,9 +24,7 @@ local function copyPrimitive(value)
   if valueType == "string" or valueType == "number" or valueType == "boolean" then return value end
 end
 
-local function usableTable(value)
-  return type(value) == "table" and not isSecret(value)
-end
+local function usableTable(value) return type(value) == "table" and not isSecret(value) end
 
 local function indexedValue(source, index)
   if not usableTable(source) then return nil end
@@ -60,18 +48,21 @@ local function addWarning(target, code, detail)
   local key = tostring(code)..":"..tostring(detail or "")
   if target._warningLookup[key] then return end
   target._warningLookup[key] = true
-  target.warnings[#target.warnings + 1] = {
-    code = tostring(code),
-    detail = detail and tostring(detail) or nil,
-  }
+  target.warnings[#target.warnings + 1] = { code = tostring(code), detail = detail and tostring(detail) or nil }
 end
 
-local function sortedPositiveKeys(source)
+local function sortedPositiveKeys(source, maximum, path)
   local result, seen = {}, {}
   if not usableTable(source) then return result end
+  maximum = tonumber(maximum) or MAX_TOTAL_ENEMIES
+  local scanned = 0
+  local scanMaximum = math.max(maximum * MAX_INDEX_SCAN_MULTIPLIER, maximum + 32)
   for key in pairs(source) do
+    scanned = scanned + 1
+    if scanned > scanMaximum then return nil, "table-scan-limit-exceeded:"..tostring(path or "unknown") end
     local index = positiveInteger(key)
     if index and not seen[index] then
+      if #result >= maximum then return nil, "positive-key-limit-exceeded:"..tostring(path or "unknown") end
       seen[index] = true
       result[#result + 1] = index
     end
@@ -86,8 +77,14 @@ local function sortedCloneIndexes(source, snapshot, path)
     addWarning(snapshot, "invalid-clone-list", path)
     return result
   end
-
+  local scanned = 0
+  local scanMaximum = MAX_CLONES_PER_ENEMY * MAX_INDEX_SCAN_MULTIPLIER
   for _, value in pairs(source) do
+    scanned = scanned + 1
+    if scanned > scanMaximum then
+      addWarning(snapshot, "clone-scan-limit-exceeded", path)
+      break
+    end
     local cloneIndex = positiveInteger(value)
     if cloneIndex and not seen[cloneIndex] then
       if #result >= MAX_CLONES_PER_ENEMY or not consumeCloneBudget(snapshot) then
@@ -112,7 +109,6 @@ local function normalizeClone(cloneIndex, cloneData, snapshot, path, marker)
     if snapshot._expectCloneMetadata then addWarning(snapshot, "missing-clone-data", path) end
     return clone
   end
-
   clone.x = safeNumber(cloneData.x)
   clone.y = safeNumber(cloneData.y)
   clone.sublevel = positiveInteger(cloneData.sublevel)
@@ -120,7 +116,6 @@ local function normalizeClone(cloneIndex, cloneData, snapshot, path, marker)
   clone.note = safeString(cloneData.note)
   return clone
 end
-
 
 local function resolveEnemyName(resolver, rawName)
   local fallback = safeString(rawName)
@@ -132,9 +127,11 @@ end
 
 local function buildEnemyNameTotals(enemyData, resolver)
   if not usableTable(enemyData) then return nil end
-  local totals = {}
-  local entries = 0
+  local totals, entries, scanned = {}, 0, 0
+  local scanMaximum = MAX_ENEMIES_PER_PULL * MAX_INDEX_SCAN_MULTIPLIER
   for _, enemy in pairs(enemyData) do
+    scanned = scanned + 1
+    if scanned > scanMaximum then return nil end
     if usableTable(enemy) then
       entries = entries + 1
       if entries > MAX_ENEMIES_PER_PULL * 4 then return nil end
@@ -142,7 +139,10 @@ local function buildEnemyNameTotals(enemyData, resolver)
       if exactName then
         local cloneCount = positiveInteger(enemy.cloneCount) or 0
         if cloneCount == 0 and usableTable(enemy.clones) then
+          local cloneScanned = 0
           for cloneIndex in pairs(enemy.clones) do
+            cloneScanned = cloneScanned + 1
+            if cloneScanned > MAX_CLONES_PER_ENEMY * MAX_INDEX_SCAN_MULTIPLIER then return nil end
             if positiveInteger(cloneIndex) then cloneCount = cloneCount + 1 end
             if cloneCount > MAX_CLONES_PER_ENEMY then break end
           end
@@ -155,11 +155,7 @@ local function buildEnemyNameTotals(enemyData, resolver)
 end
 
 local function normalizeEnemy(enemyIndex, cloneIndexes, enemyData, snapshot, pullIndex, enemyAssignments, enemyNameResolver)
-  local enemy = {
-    enemyIndex = enemyIndex,
-    clones = {},
-  }
-
+  local enemy = { enemyIndex = enemyIndex, clones = {} }
   if usableTable(enemyData) then
     enemy.npcID = positiveInteger(enemyData.id or enemyData.npcID)
     enemy.name = resolveEnemyName(enemyNameResolver, enemyData.name)
@@ -170,7 +166,6 @@ local function normalizeEnemy(enemyIndex, cloneIndexes, enemyData, snapshot, pul
   elseif snapshot._expectMetadata then
     addWarning(snapshot, "missing-enemy-data", ("pull:%d/enemy:%d"):format(pullIndex, enemyIndex))
   end
-
   local cloneDataList = usableTable(enemyData) and enemyData.clones or nil
   for _, cloneIndex in ipairs(cloneIndexes) do
     enemy.clones[#enemy.clones + 1] = normalizeClone(
@@ -181,25 +176,16 @@ local function normalizeEnemy(enemyIndex, cloneIndexes, enemyData, snapshot, pul
       indexedValue(enemyAssignments, cloneIndex)
     )
   end
-
   return enemy
 end
 
--- Route identity changes only when pull membership changes. Display names,
--- coordinates and addon versions are intentionally excluded so MDT metadata
--- refreshes do not reset runtime progress.
 local function canonicalizeStable(snapshot)
-  local parts = {
-    "schema=3",
-    "d="..tostring(snapshot.dungeonIndex or 0),
-  }
+  local parts = { "schema=3", "d="..tostring(snapshot.dungeonIndex or 0) }
   for _, pull in ipairs(snapshot.pulls) do
     parts[#parts + 1] = "p="..tostring(pull.index)
     for _, enemy in ipairs(pull.enemies) do
       parts[#parts + 1] = "e="..tostring(enemy.enemyIndex)
-      for _, clone in ipairs(enemy.clones) do
-        parts[#parts + 1] = "c="..tostring(clone.cloneIndex)
-      end
+      for _, clone in ipairs(enemy.clones) do parts[#parts + 1] = "c="..tostring(clone.cloneIndex) end
     end
   end
   return table.concat(parts, "|")
@@ -208,11 +194,8 @@ end
 local function finalize(snapshot)
   snapshot.canonicalRoute = canonicalizeStable(snapshot)
   snapshot.fingerprint = "route-v3-"..DataUtils.StableHash(snapshot.canonicalRoute)
-  if snapshot.presetUID and snapshot.presetUID ~= "" then
-    snapshot.routeKey = "uid:"..snapshot.presetUID
-  else
-    snapshot.routeKey = "fp:"..snapshot.fingerprint
-  end
+  if snapshot.presetUID and snapshot.presetUID ~= "" then snapshot.routeKey = "uid:"..snapshot.presetUID
+  else snapshot.routeKey = "fp:"..snapshot.fingerprint end
   snapshot._warningLookup = nil
   snapshot._totalClones = nil
   snapshot._totalEnemies = nil
@@ -240,37 +223,26 @@ function RouteSnapshot.NormalizePreset(preset, context)
     enemyNameScope = safeString(context.enemyDataScope) or (usableTable(context.enemyData) and "provided" or "route-only"),
     clientLocale = safeString(context.clientLocale),
     targetNameLocaleStatus = safeString(context.targetNameLocaleStatus),
-    pulls = {},
-    warnings = {},
+    pulls = {}, warnings = {},
     _expectMetadata = usableTable(context.enemyData),
     _expectCloneMetadata = usableTable(context.enemyData) and context.expectCloneMetadata ~= false,
   }
-
-  if not usableTable(preset) or not usableTable(preset.value) or not usableTable(preset.value.pulls) then
-    return nil, "invalid-preset"
-  end
-
-  if not snapshot.dungeonIndex then
-    snapshot.dungeonIndex = positiveInteger(preset.value.currentDungeonIdx)
-  end
-
-  local pullKeys = sortedPositiveKeys(preset.value.pulls)
+  if not usableTable(preset) or not usableTable(preset.value) or not usableTable(preset.value.pulls) then return nil, "invalid-preset" end
+  if not snapshot.dungeonIndex then snapshot.dungeonIndex = positiveInteger(preset.value.currentDungeonIdx) end
+  local pullKeys, pullKeyError = sortedPositiveKeys(preset.value.pulls, MAX_PULLS, "preset-pulls")
+  if not pullKeys then return nil, pullKeyError end
   local expectedPull = 1
   for _, pullIndex in ipairs(pullKeys) do
     if #snapshot.pulls >= MAX_PULLS then return nil, "too-many-pulls" end
     if pullIndex ~= expectedPull then addWarning(snapshot, "sparse-pulls", tostring(pullIndex)) end
     expectedPull = pullIndex + 1
-
     local rawPull = indexedValue(preset.value.pulls, pullIndex)
     if not usableTable(rawPull) then
       addWarning(snapshot, "invalid-pull", tostring(pullIndex))
     else
-      local pull = {
-        index = pullIndex,
-        color = safeString(rawPull.color),
-        enemies = {},
-      }
-      local enemyKeys = sortedPositiveKeys(rawPull)
+      local pull = { index = pullIndex, color = safeString(rawPull.color), enemies = {} }
+      local enemyKeys, enemyKeyError = sortedPositiveKeys(rawPull, MAX_ENEMIES_PER_PULL, "preset-pull-enemies")
+      if not enemyKeys then return nil, enemyKeyError end
       for _, enemyIndex in ipairs(enemyKeys) do
         if #pull.enemies >= MAX_ENEMIES_PER_PULL then return nil, "too-many-enemies-in-pull" end
         if not consumeEnemyBudget(snapshot) then return nil, "too-many-route-enemies" end
@@ -282,25 +254,16 @@ function RouteSnapshot.NormalizePreset(preset, context)
       snapshot.pulls[#snapshot.pulls + 1] = pull
     end
   end
-
   if #snapshot.pulls == 0 then addWarning(snapshot, "empty-route") end
   return finalize(snapshot)
 end
 
 local function normalizePublicClone(rawClone, fallbackIndex, snapshot, pullIndex, enemyIndex)
-  if type(rawClone) == "number" then
-    return normalizeClone(rawClone, nil, snapshot, ("pull:%d/enemy:%d/clone:%s"):format(pullIndex, enemyIndex, tostring(rawClone)))
-  end
+  if type(rawClone) == "number" then return normalizeClone(rawClone, nil, snapshot, ("pull:%d/enemy:%d/clone:%s"):format(pullIndex, enemyIndex, tostring(rawClone))) end
   if not usableTable(rawClone) then return nil end
   local cloneIndex = positiveInteger(rawClone.cloneIndex or rawClone.index or fallbackIndex)
   if not cloneIndex then return nil end
-  return normalizeClone(
-    cloneIndex,
-    rawClone,
-    snapshot,
-    ("pull:%d/enemy:%d/clone:%d"):format(pullIndex, enemyIndex, cloneIndex),
-    rawClone.marker or rawClone.targetMarker or rawClone.raidMarker
-  )
+  return normalizeClone(cloneIndex, rawClone, snapshot, ("pull:%d/enemy:%d/clone:%d"):format(pullIndex, enemyIndex, cloneIndex), rawClone.marker or rawClone.targetMarker or rawClone.raidMarker)
 end
 
 function RouteSnapshot.NormalizePublic(raw, context)
@@ -308,65 +271,44 @@ function RouteSnapshot.NormalizePublic(raw, context)
   if not usableTable(raw) then return nil, "invalid-public-snapshot" end
   if usableTable(raw.preset) then
     return RouteSnapshot.NormalizePreset(raw.preset, {
-      sourceMode = "public-snapshot",
-      compatibility = "full",
-      mdtVersion = context.mdtVersion,
-      dungeonIndex = raw.dungeonIndex,
-      dungeonName = raw.dungeonName or raw.instanceName or raw.mapName,
-      challengeMapID = raw.challengeMapID or raw.mapID,
-      presetIndex = raw.presetIndex,
-      enemyData = raw.enemyData or raw.enemies,
-      enemyDataScope = raw.enemyDataScope or raw.enemyMetadataScope or "provided",
-      enemyNameResolver = context.enemyNameResolver,
-      clientLocale = context.clientLocale or raw.clientLocale,
+      sourceMode = "public-snapshot", compatibility = "full", mdtVersion = context.mdtVersion,
+      dungeonIndex = raw.dungeonIndex, dungeonName = raw.dungeonName or raw.instanceName or raw.mapName,
+      challengeMapID = raw.challengeMapID or raw.mapID, presetIndex = raw.presetIndex,
+      enemyData = raw.enemyData or raw.enemies, enemyDataScope = raw.enemyDataScope or raw.enemyMetadataScope or "provided",
+      enemyNameResolver = context.enemyNameResolver, clientLocale = context.clientLocale or raw.clientLocale,
       targetNameLocaleStatus = context.targetNameLocaleStatus or raw.targetNameLocaleStatus,
       expectCloneMetadata = context.expectCloneMetadata,
     })
   end
-
   local snapshot = {
-    schemaVersion = 3,
-    sourceMode = "public-snapshot",
-    compatibility = "full",
-    mdtVersion = safeString(context.mdtVersion),
-    dungeonIndex = positiveInteger(raw.dungeonIndex),
+    schemaVersion = 3, sourceMode = "public-snapshot", compatibility = "full",
+    mdtVersion = safeString(context.mdtVersion), dungeonIndex = positiveInteger(raw.dungeonIndex),
     dungeonName = safeString(raw.dungeonName or raw.instanceName or raw.mapName),
-    challengeMapID = positiveInteger(raw.challengeMapID or raw.mapID),
-    presetIndex = positiveInteger(raw.presetIndex),
-    presetName = safeString(raw.presetName or raw.name),
-    presetUID = safeString(raw.presetUID or raw.uid),
+    challengeMapID = positiveInteger(raw.challengeMapID or raw.mapID), presetIndex = positiveInteger(raw.presetIndex),
+    presetName = safeString(raw.presetName or raw.name), presetUID = safeString(raw.presetUID or raw.uid),
     currentPull = positiveInteger(raw.currentPull),
     nativeAssignmentsAvailable = raw.nativeAssignmentsAvailable == true or usableTable(raw.enemyAssignments),
     enemyNameTotals = buildEnemyNameTotals(raw.enemyData or raw.enemies, context.enemyNameResolver),
     enemyNameScope = safeString(raw.enemyDataScope or raw.enemyMetadataScope) or "public-route",
     clientLocale = safeString(context.clientLocale or raw.clientLocale),
     targetNameLocaleStatus = safeString(context.targetNameLocaleStatus or raw.targetNameLocaleStatus),
-    pulls = {},
-    warnings = {},
-    _expectMetadata = true,
-    _expectCloneMetadata = context.expectCloneMetadata ~= false,
+    pulls = {}, warnings = {}, _expectMetadata = true, _expectCloneMetadata = context.expectCloneMetadata ~= false,
   }
-
   if not usableTable(raw.pulls) then return nil, "invalid-public-snapshot" end
-  local pullKeys = sortedPositiveKeys(raw.pulls)
-  for _, pullIndex in ipairs(pullKeys) do
+  local publicPullKeys, publicPullError = sortedPositiveKeys(raw.pulls, MAX_PULLS, "public-pulls")
+  if not publicPullKeys then return nil, publicPullError end
+  for _, pullIndex in ipairs(publicPullKeys) do
     if #snapshot.pulls >= MAX_PULLS then return nil, "too-many-pulls" end
     local rawPull = indexedValue(raw.pulls, pullIndex)
     if usableTable(rawPull) then
       local pull = { index = pullIndex, color = safeString(rawPull.color), enemies = {} }
       local rawEnemies = rawPull.enemies or rawPull
-      local enemyKeys = sortedPositiveKeys(rawEnemies)
+      local enemyKeys, enemyKeyError = sortedPositiveKeys(rawEnemies, MAX_ENEMIES_PER_PULL, "public-pull-enemies")
+      if not enemyKeys then return nil, enemyKeyError end
       local listForm = false
-      -- Do not infer the public shape from only the first numeric entry. A sparse or
-      -- partially-invalid list can still contain valid enemy objects later; treating
-      -- that as the membership-map form would silently lose their metadata/markers.
       for _, listIndex in ipairs(enemyKeys) do
         local candidate = indexedValue(rawEnemies, listIndex)
-        if usableTable(candidate) and positiveInteger(candidate.enemyIndex or candidate.index)
-          and usableTable(candidate.clones) then
-          listForm = true
-          break
-        end
+        if usableTable(candidate) and positiveInteger(candidate.enemyIndex or candidate.index) and usableTable(candidate.clones) then listForm = true break end
       end
       if listForm then
         local seenEnemies = {}
@@ -380,21 +322,20 @@ function RouteSnapshot.NormalizePublic(raw, context)
             if not consumeEnemyBudget(snapshot) then return nil, "too-many-route-enemies" end
             seenEnemies[enemyIndex] = true
             local enemy = {
-              enemyIndex = enemyIndex,
-              npcID = positiveInteger(rawEnemy.npcID or rawEnemy.id),
-              name = safeString(rawEnemy.name),
-              count = safeNumber(rawEnemy.count),
-              health = safeNumber(rawEnemy.health),
-              displayID = positiveInteger(rawEnemy.displayID or rawEnemy.displayId),
-              isBoss = copyPrimitive(rawEnemy.isBoss) == true,
+              enemyIndex = enemyIndex, npcID = positiveInteger(rawEnemy.npcID or rawEnemy.id), name = safeString(rawEnemy.name),
+              count = safeNumber(rawEnemy.count), health = safeNumber(rawEnemy.health),
+              displayID = positiveInteger(rawEnemy.displayID or rawEnemy.displayId), isBoss = copyPrimitive(rawEnemy.isBoss) == true,
               clones = {},
             }
             if usableTable(rawEnemy.clones) then
-              local seenClones = {}
+              local seenClones, cloneScanned = {}, 0
               for cloneKey, rawClone in pairs(rawEnemy.clones) do
+                cloneScanned = cloneScanned + 1
+                if cloneScanned > MAX_CLONES_PER_ENEMY * MAX_INDEX_SCAN_MULTIPLIER then
+                  addWarning(snapshot, "clone-scan-limit-exceeded", ("pull:%d/enemy:%d"):format(pullIndex, enemyIndex)); break
+                end
                 if #enemy.clones >= MAX_CLONES_PER_ENEMY or not consumeCloneBudget(snapshot) then
-                  addWarning(snapshot, "clone-limit-exceeded", ("pull:%d/enemy:%d"):format(pullIndex, enemyIndex))
-                  break
+                  addWarning(snapshot, "clone-limit-exceeded", ("pull:%d/enemy:%d"):format(pullIndex, enemyIndex)); break
                 end
                 local clone = normalizePublicClone(rawClone, cloneKey, snapshot, pullIndex, enemyIndex)
                 if clone and seenClones[clone.cloneIndex] then
@@ -420,24 +361,13 @@ function RouteSnapshot.NormalizePublic(raw, context)
           if #pull.enemies >= MAX_ENEMIES_PER_PULL then return nil, "too-many-enemies-in-pull" end
           if not consumeEnemyBudget(snapshot) then return nil, "too-many-route-enemies" end
           local cloneIndexes = sortedCloneIndexes(indexedValue(rawEnemies, enemyIndex), snapshot, ("pull:%d/enemy:%d"):format(pullIndex, enemyIndex))
-          local publicEnemyData = indexedValue(raw.enemyData or raw.enemies, enemyIndex)
-          local publicEnemyAssignments = indexedValue(raw.enemyAssignments, enemyIndex)
-          pull.enemies[#pull.enemies + 1] = normalizeEnemy(
-            enemyIndex,
-            cloneIndexes,
-            publicEnemyData,
-            snapshot,
-            pullIndex,
-            publicEnemyAssignments,
-            context.enemyNameResolver
-          )
+          pull.enemies[#pull.enemies + 1] = normalizeEnemy(enemyIndex, cloneIndexes, indexedValue(raw.enemyData or raw.enemies, enemyIndex), snapshot, pullIndex, indexedValue(raw.enemyAssignments, enemyIndex), context.enemyNameResolver)
         end
       end
       table.sort(pull.enemies, function(a, b) return a.enemyIndex < b.enemyIndex end)
       snapshot.pulls[#snapshot.pulls + 1] = pull
     end
   end
-
   if #snapshot.pulls == 0 then addWarning(snapshot, "empty-route") end
   return finalize(snapshot)
 end

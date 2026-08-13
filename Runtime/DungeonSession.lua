@@ -169,6 +169,27 @@ function Session:Refresh(reason, allowWindowAction)
   return self:GetState()
 end
 
+function Session:Invalidate(reason)
+  state.serial = state.serial + 1 -- cancel every older delayed refresh
+  state.active = false
+  state.inInstance = false
+  state.instanceType = nil
+  state.challengeMapID = nil
+  state.challengeName = nil
+  state.isMythicPlus = false
+  state.routeMatches = nil
+  state.markerCount = 0
+  state.lastReason = reason or "session-invalidated"
+  state.lastAction = "invalidated"
+  state.lastError = nil
+  if Addon.MarkerExecutor and type(Addon.MarkerExecutor.InvalidateExecution) == "function" then
+    Addon.MarkerExecutor:InvalidateExecution("session:"..tostring(state.lastReason))
+  elseif Addon.MarkerExecutor and type(Addon.MarkerExecutor.OnInstructionChanged) == "function" then
+    Addon.MarkerExecutor:OnInstructionChanged("session:"..tostring(state.lastReason))
+  end
+  return self:GetState()
+end
+
 function Session:ScheduleRefresh(reason, delay, allowWindowAction)
   state.serial = state.serial + 1
   local serial = state.serial
@@ -202,6 +223,7 @@ function Session:OnEvent(event)
     return self:GetState()
   end
   if event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_RESET" then state.challengeCompleted = false end
+  self:Invalidate(event)
   local delay = event == "PLAYER_ENTERING_WORLD" and 1 or 0.2
   self:ScheduleRefresh(event, delay, true)
 end

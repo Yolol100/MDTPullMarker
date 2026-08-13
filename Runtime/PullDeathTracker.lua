@@ -15,6 +15,7 @@ local state = {
   combatSerial = 0,
   readableDeathEvents = 0,
   restrictedDeathEvents = 0,
+  trackingFailureEvents = 0,
   ambiguousDeathEvents = 0,
   lastNPCID = nil,
   lastGUID = nil,
@@ -63,6 +64,7 @@ local function resetContextProgress(context, reason)
   context.complete = false
   context.readableDeathEvents = 0
   context.restrictedDeathEvents = 0
+  context.trackingFailureEvents = 0
   context.ambiguousDeathEvents = 0
   context.lastNPCID = nil
   context.lastGUID = nil
@@ -107,6 +109,7 @@ local function resetAll(reason)
   state.seenGUIDs = {}
   state.readableDeathEvents = 0
   state.restrictedDeathEvents = 0
+  state.trackingFailureEvents = 0
   state.ambiguousDeathEvents = 0
   state.lastNPCID = nil
   state.lastGUID = nil
@@ -130,6 +133,26 @@ local function markRestrictedForActiveContexts(reason)
   end
   notifyProgress(state.lastReason)
   return false, state.lastReason
+end
+
+local function markTrackingFailureForActiveContexts(reason)
+  state.trackingFailureEvents = state.trackingFailureEvents + 1
+  state.lastReason = reason or "combat-log-tracking-failed"
+  for _, context in pairs(state.contexts) do
+    if context.active then
+      context.trackingFailureEvents = (context.trackingFailureEvents or 0) + 1
+      context.lastReason = state.lastReason
+    end
+  end
+  notifyProgress(state.lastReason)
+  return false, state.lastReason
+end
+
+local function combatLogReader()
+  if type(C_CombatLog) == "table" and type(C_CombatLog.GetCurrentEventInfo) == "function" then
+    return C_CombatLog.GetCurrentEventInfo
+  end
+  if type(CombatLogGetCurrentEventInfo) == "function" then return CombatLogGetCurrentEventInfo end
 end
 
 local function routeBindingActive()
@@ -167,9 +190,6 @@ function Tracker:OnCombatStarted()
   local runtime = currentRuntime()
   state.routeFingerprint = runtime and runtime.routeFingerprint or state.routeFingerprint
   state.focusPullIndex = runtime and DataUtils.PositiveInteger(runtime.currentPullIndex) or nil
-  -- Bound-route mode activates a pull only when its dedicated route macro is
-  -- actually pressed. This prevents an intentionally skipped pull from being
-  -- treated as active merely because it was the UI cursor at combat start.
   if not routeBindingActive() and state.focusPullIndex then
     self:ActivatePull(state.focusPullIndex, "combat-start")
   end
@@ -209,21 +229,29 @@ end
 
 function Tracker:OnCombatLogEvent()
   if not state.inCombat then return false, "outside-combat" end
-  if type(CombatLogGetCurrentEventInfo) ~= "function" then
-    return markRestrictedForActiveContexts("combat-log-api-unavailable")
+  local reader = combatLogReader()
+  if type(reader) ~= "function" then
+    return markTrackingFailureForActiveContexts("combat-log-api-unavailable")
   end
 
-  local ok, _, subevent, _, _, _, _, _, destGUID = pcall(CombatLogGetCurrentEventInfo)
+  local ok, _, subevent, _, _, _, _, _, destGUID = pcall(reader)
   if not ok then
-    return markRestrictedForActiveContexts("combat-log-read-failed")
+    return markTrackingFailureForActiveContexts("combat-log-read-failed")
   end
   if isSecret(subevent) then
-    return markRestrictedForActiveContexts("combat-log-subevent-secret")
+    -- A secret event type does not prove that a death event happened. Treat it
+    -- as unavailable tracking, never as permission to complete a pull.
+    return markTrackingFailureForActiveContexts("combat-log-subevent-secret")
   end
   if subevent ~= "UNIT_DIED" and subevent ~= "UNIT_DESTROYED" then return false, "irrelevant-event" end
 
-  if isSecret(destGUID) or type(destGUID) ~= "string" then
+  if isSecret(destGUID) then
+    -- The event type is already proven to be UNIT_DIED/UNIT_DESTROYED, so a
+    -- secret GUID is genuine restricted death evidence.
     return markRestrictedForActiveContexts("combat-log-dest-guid-secret")
+  end
+  if type(destGUID) ~= "string" or destGUID == "" then
+    return markTrackingFailureForActiveContexts("combat-log-dest-guid-unavailable")
   end
   if state.seenGUIDs[destGUID] then return false, "death-already-counted" end
 
@@ -292,6 +320,7 @@ function Tracker:GetCompletionVerdict(pullIndex)
   if (tonumber(context.ambiguousDeathEvents) or 0) > 0 then return nil, "death-tracking-ambiguous-overlap" end
   if context.status == "tracking" and context.expectedTotal > 0 then
     if (tonumber(context.readableDeathEvents) or 0) > 0 then return false, "death-incomplete" end
+    if (tonumber(context.trackingFailureEvents) or 0) > 0 then return false, "death-tracking-unavailable" end
     if (tonumber(context.restrictedDeathEvents) or 0) > 0 then return nil, "death-tracking-restricted" end
     return false, "death-tracking-no-evidence"
   end
@@ -316,6 +345,7 @@ local function contextState(context)
     complete = context.complete == true,
     readableDeathEvents = context.readableDeathEvents or 0,
     restrictedDeathEvents = context.restrictedDeathEvents or 0,
+    trackingFailureEvents = context.trackingFailureEvents or 0,
     ambiguousDeathEvents = context.ambiguousDeathEvents or 0,
     lastNPCID = context.lastNPCID,
     lastReason = context.lastReason,
@@ -337,6 +367,7 @@ function Tracker:GetState(pullIndex)
     complete = false,
     readableDeathEvents = 0,
     restrictedDeathEvents = 0,
+    trackingFailureEvents = 0,
     ambiguousDeathEvents = 0,
     lastNPCID = nil,
     lastReason = state.lastReason,
@@ -353,6 +384,7 @@ function Tracker:GetState(pullIndex)
   focused.activeCount = #activePulls
   focused.totalReadableDeathEvents = state.readableDeathEvents
   focused.totalRestrictedDeathEvents = state.restrictedDeathEvents
+  focused.totalTrackingFailureEvents = state.trackingFailureEvents
   focused.totalAmbiguousDeathEvents = state.ambiguousDeathEvents
   focused.lastGUID = state.lastGUID
   return focused

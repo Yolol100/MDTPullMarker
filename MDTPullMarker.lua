@@ -1,11 +1,14 @@
 local addonName, Addon = ...
 
 local PREFIX = "|cff33ff99MDT Pull Marker:|r "
-local ADDON_VERSION = "1.0.0-rc54"
+local ADDON_VERSION = "1.0.0-rc58"
 local MAX_LOG_ENTRIES = 100
+local MAX_LOG_LEVEL_BYTES = 16
+local MAX_LOG_MESSAGE_BYTES = 800
 
 Addon.Name = addonName
 Addon.Version = ADDON_VERSION
+Addon.L = Addon.L or setmetatable({}, { __index = function(_, key) return key end })
 Addon.Constants = {
   SmartButtonName = "MDTPullMarkerSmartButton",
   SmartMacroName = "MDTPM1",
@@ -24,9 +27,6 @@ Addon.Constants = {
   },
 }
 
-_G.BINDING_HEADER_MDTPULLMARKER = "MDT Pull Marker"
-_G["BINDING_NAME_CLICK "..Addon.Constants.SmartButtonName..":LeftButton"] = "MDT route marker: mark up to 3 targets"
-
 local function isSecret(value)
   return type(issecretvalue) == "function" and issecretvalue(value)
 end
@@ -34,6 +34,29 @@ end
 local function safeDisplayString(value)
   if isSecret(value) then return "<secret>" end
   return tostring(value or "")
+end
+
+local function utf8SafePrefix(value, maximum)
+  if #value <= maximum then return value end
+  local start = maximum
+  while start > 1 do
+    local byte = value:byte(start)
+    if not byte or byte < 0x80 or byte >= 0xC0 then break end
+    start = start - 1
+  end
+  local lead = value:byte(start) or 0
+  local expected = 1
+  if lead >= 0xC2 and lead <= 0xDF then expected = 2
+  elseif lead >= 0xE0 and lead <= 0xEF then expected = 3
+  elseif lead >= 0xF0 and lead <= 0xF4 then expected = 4 end
+  local cut = (start + expected - 1 <= maximum) and maximum or (start - 1)
+  return cut > 0 and value:sub(1, cut) or ""
+end
+
+local function boundedLogString(value, maximum)
+  local text = safeDisplayString(value)
+  if #text > maximum then text = utf8SafePrefix(text, maximum) end
+  return text
 end
 
 local function chat(message)
@@ -60,8 +83,8 @@ local function trimLogs(global)
 end
 
 local function log(level, message, showInChat)
-  level = safeDisplayString(level or "INFO")
-  message = safeDisplayString(message)
+  level = boundedLogString(level or "INFO", MAX_LOG_LEVEL_BYTES)
+  message = boundedLogString(message, MAX_LOG_MESSAGE_BYTES)
   local global = getGlobal()
   if global then
     global.logs = type(global.logs) == "table" and global.logs or {}

@@ -13,8 +13,6 @@ local function add(findings, severity, code, path, detail)
 end
 
 local function inspect(value, path, depth, seen, findings)
-  -- Migration backups are archival only: runtime never executes or reads their
-  -- payload. Keep corrupt historical backup content isolated from active state.
   if path:match("^database/backups/%d+") then return end
   if DataUtils.IsSecret(value) then add(findings, "error", "secret-database-value", path) return end
   if depth > 10 then add(findings, "error", "database-max-depth", path) return end
@@ -124,12 +122,12 @@ function Validator.ValidateDatabase(rawDB, expectedSchema)
       if type(cache.targetNamesVerified) ~= "boolean" then add(findings, "error", "invalid-enemy-metadata-cache-verification", "database.enemyMetadataCache.targetNamesVerified") end
       if type(cache.enemies) ~= "table" then add(findings, "error", "enemy-metadata-cache-enemies-not-table", "database.enemyMetadataCache.enemies")
       else
-        local enemyCount=0
+        local enemyCount = 0
         for enemyIndex, enemy in pairs(cache.enemies) do
-          enemyCount=enemyCount+1
-          if enemyCount>MAX_METADATA_ENEMIES then add(findings,"error","too-many-enemy-metadata-cache-entries","database.enemyMetadataCache.enemies") break end
-          if not DataUtils.PositiveInteger(enemyIndex) or type(enemy)~="table" or not DataUtils.PositiveInteger(enemy.id) or type(enemy.name)~="string" or not DataUtils.PositiveInteger(enemy.cloneCount) then
-            add(findings,"error","invalid-enemy-metadata-cache-entry","database.enemyMetadataCache.enemies/"..tostring(enemyIndex))
+          enemyCount = enemyCount + 1
+          if enemyCount > MAX_METADATA_ENEMIES then add(findings, "error", "too-many-enemy-metadata-cache-entries", "database.enemyMetadataCache.enemies") break end
+          if not DataUtils.PositiveInteger(enemyIndex) or type(enemy) ~= "table" or not DataUtils.PositiveInteger(enemy.id) or type(enemy.name) ~= "string" or not DataUtils.PositiveInteger(enemy.cloneCount) then
+            add(findings, "error", "invalid-enemy-metadata-cache-entry", "database.enemyMetadataCache.enemies/"..tostring(enemyIndex))
           end
         end
       end

@@ -30,12 +30,49 @@ function DataUtils.Trim(value)
   return value:match("^%s*(.-)%s*$")
 end
 
+local function utf8SequenceLength(byte)
+  if not byte or byte < 0x80 then return 1 end
+  if byte >= 0xC2 and byte <= 0xDF then return 2 end
+  if byte >= 0xE0 and byte <= 0xEF then return 3 end
+  if byte >= 0xF0 and byte <= 0xF4 then return 4 end
+  return 1
+end
+
+function DataUtils.UTF8SafePrefix(value, maxBytes)
+  if type(value) ~= "string" then return nil end
+  maxBytes = math.floor(tonumber(maxBytes) or #value)
+  if maxBytes <= 0 then return "" end
+  if #value <= maxBytes then return value end
+
+  local start = maxBytes
+  while start > 1 do
+    local byte = value:byte(start)
+    if not byte or byte < 0x80 or byte >= 0xC0 then break end
+    start = start - 1
+  end
+  local expected = utf8SequenceLength(value:byte(start))
+  local cut = (start + expected - 1 <= maxBytes) and maxBytes or (start - 1)
+  return cut > 0 and value:sub(1, cut) or ""
+end
+
 function DataUtils.SafeString(value, maxLength, allowEmpty)
   if DataUtils.IsSecret(value) or type(value) ~= "string" then return nil end
   value = DataUtils.Trim(value) or ""
   if not allowEmpty and value == "" then return nil end
   maxLength = tonumber(maxLength) or 1024
-  if #value > maxLength then value = value:sub(1, maxLength) end
+  if #value > maxLength then value = DataUtils.UTF8SafePrefix(value, maxLength) end
+  return value
+end
+
+-- Identity/external values must never silently become a different value merely
+-- because they exceed a local bound. Use this for persisted identifiers and
+-- API identity fields; SafeString remains appropriate for display/log clipping.
+function DataUtils.ValidatedString(value, maxLength, allowEmpty)
+  if DataUtils.IsSecret(value) or type(value) ~= "string" then return nil end
+  value = DataUtils.Trim(value) or ""
+  if not allowEmpty and value == "" then return nil end
+  maxLength = tonumber(maxLength) or 1024
+  if #value > maxLength then return nil end
   return value
 end
 
