@@ -16,4 +16,6 @@ The active runtime inventory is defined by `MDTPullMarker.toc`.
 
 The current rc58 tree does not contain the previously documented `tests/`, `scripts/`, `types/` or `docs/` directories. Those absent files are therefore not claimed as release evidence in this README.
 
+The checked-in validation workflow compiles Lua sources with Lua 5.1, verifies the TOC inventory and ensures the retired duplicate source placeholders remain inert.
+
 Before a public release, validate the addon on the current Retail client and verify the current Mythic Dungeon Tools integration, grouped operation, route changes, persistence and UI behavior.
