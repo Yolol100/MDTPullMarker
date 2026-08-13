@@ -29,3 +29,16 @@ jobs:
             entry="${entry//\\//}"
             test -f "$entry" || { echo "Missing TOC file: $entry" >&2; exit 1; }
           done < MDTPullMarker.toc
+      - name: Verify retired modules stay unloaded
+        shell: bash
+        run: |
+          set -euo pipefail
+          for retired in 'Runtime\PullController.lua' 'Integrations\MDTUI.lua' 'UI\Configuration.lua'; do
+            if grep -Fq "$retired" MDTPullMarker.toc; then
+              echo "Retired module returned to the active TOC: $retired" >&2
+              exit 1
+            fi
+          done
+          grep -Fq 'Runtime\RuntimeController.lua' MDTPullMarker.toc
+          grep -Fq 'Integrations\MDTIntegration.lua' MDTPullMarker.toc
+          grep -Fq 'UI\ConfigurationUI.lua' MDTPullMarker.toc
