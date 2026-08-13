@@ -1,0 +1,5 @@
+local file = assert(io.open("Runtime/MarkerOwnership.lua", "rb"))
+local source = file:read("*a")
+file:close()
+assert(type(source) == "string" and #source > 0, "ownership source is missing")
+print("ok - ownership source present")
