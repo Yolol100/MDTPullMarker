@@ -260,7 +260,13 @@ local function recomputeOwner(reason)
   end
 
   local candidates = {}
-  for _, entry in pairs(rosterMap) do candidates[#candidates + 1] = entry end
+  local localKey = canonical(state.localName)
+  for key, entry in pairs(rosterMap) do
+    local peer = state.peers[key]
+    local eligible = (key == localKey and state.localEligible == true)
+      or (peer and peer.eligible == true and peerOwnerProtocolCompatible(peer))
+    if eligible then candidates[#candidates + 1] = entry end
+  end
 
   table.sort(candidates, function(left, right)
     local lr, rr = candidateRank(left), candidateRank(right)

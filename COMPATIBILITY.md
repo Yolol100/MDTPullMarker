@@ -21,9 +21,11 @@ The integration prefers `MythicDungeonToolsAPI`; legacy `_G.MDT` access is isola
 - Missing or ambiguous route identity fails closed instead of binding by name alone.
 - Active Challenge Map identity is authoritative.
 - rc58 detects incompatible pre-rc52 peers and remains passive rather than risking multiple active marker owners.
+- Only eligible clients that have announced this add-on participate in grouped marker-owner election; unrelated tanks or leaders cannot suppress all marking.
+- Midnight pull-death evidence uses the supported `UNIT_DIED` event. A restricted/secret GUID remains advisory and cannot complete a pull.
 
 All marker operators in a group should use a current build.
 
 ## Repository validation
 
-The checked-in GitHub workflow installs Lua 5.1, compiles the Lua source and verifies the active TOC inventory. The current public rc58 tree does not contain the previously documented broader regression, static-analysis or packaging suites; those absent assets are not current automated release evidence.
+The checked-in GitHub workflow installs Lua 5.1, compiles the Lua source, runs focused lifecycle/ownership regression tests and verifies the active TOC inventory. The current public rc58 tree does not contain the previously documented broader static-analysis or packaging suites; those absent assets are not current automated release evidence.

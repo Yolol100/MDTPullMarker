@@ -148,13 +148,6 @@ local function markTrackingFailureForActiveContexts(reason)
   return false, state.lastReason
 end
 
-local function combatLogReader()
-  if type(C_CombatLog) == "table" and type(C_CombatLog.GetCurrentEventInfo) == "function" then
-    return C_CombatLog.GetCurrentEventInfo
-  end
-  if type(CombatLogGetCurrentEventInfo) == "function" then return CombatLogGetCurrentEventInfo end
-end
-
 local function routeBindingActive()
   return Addon.MDT and type(Addon.MDT.GetRouteBinding) == "function" and Addon.MDT:GetRouteBinding() ~= nil
 end
@@ -227,31 +220,15 @@ function Tracker:RetirePull(pullIndex, reason)
   return true
 end
 
-function Tracker:OnCombatLogEvent()
+local function recordUnitDeath(destGUID, restrictedReason)
   if not state.inCombat then return false, "outside-combat" end
-  local reader = combatLogReader()
-  if type(reader) ~= "function" then
-    return markTrackingFailureForActiveContexts("combat-log-api-unavailable")
-  end
-
-  local ok, _, subevent, _, _, _, _, _, destGUID = pcall(reader)
-  if not ok then
-    return markTrackingFailureForActiveContexts("combat-log-read-failed")
-  end
-  if isSecret(subevent) then
-    -- A secret event type does not prove that a death event happened. Treat it
-    -- as unavailable tracking, never as permission to complete a pull.
-    return markTrackingFailureForActiveContexts("combat-log-subevent-secret")
-  end
-  if subevent ~= "UNIT_DIED" and subevent ~= "UNIT_DESTROYED" then return false, "irrelevant-event" end
-
   if isSecret(destGUID) then
-    -- The event type is already proven to be UNIT_DIED/UNIT_DESTROYED, so a
-    -- secret GUID is genuine restricted death evidence.
-    return markRestrictedForActiveContexts("combat-log-dest-guid-secret")
+    -- UNIT_DIED itself proves that a death occurred, but a secret GUID cannot be
+    -- assigned to one planned NPC. Keep the pull unresolved instead of guessing.
+    return markRestrictedForActiveContexts(restrictedReason or "unit-died-guid-secret")
   end
   if type(destGUID) ~= "string" or destGUID == "" then
-    return markTrackingFailureForActiveContexts("combat-log-dest-guid-unavailable")
+    return markTrackingFailureForActiveContexts("unit-died-guid-unavailable")
   end
   if state.seenGUIDs[destGUID] then return false, "death-already-counted" end
 
@@ -310,6 +287,19 @@ function Tracker:OnCombatLogEvent()
   state.lastReason = context.lastReason
   notifyProgress(context.lastReason)
   return true, context.lastReason
+end
+
+-- Midnight restricts COMBAT_LOG_EVENT_UNFILTERED for normal addons. UNIT_DIED
+-- is the supported event surface and supplies the dead unit GUID directly; its
+-- GUID may be secret when unit identity is restricted, which is handled above.
+function Tracker:OnUnitDied(unitGUID)
+  return recordUnitDeath(unitGUID, "unit-died-guid-secret")
+end
+
+-- Kept only as an inert compatibility entry point for callers from older test
+-- harnesses. The 12.x runtime never registers the restricted combat-log event.
+function Tracker:OnCombatLogEvent()
+  return false, "combat-log-event-unsupported"
 end
 
 function Tracker:GetCompletionVerdict(pullIndex)

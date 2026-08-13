@@ -108,8 +108,8 @@ local function handleEvent(_, event, ...)
     refreshVisibleUI()
   elseif event == "CVAR_UPDATE" then
     Addon.MarkerExecutor:OnCVarUpdate(...)
-  elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-    Addon.PullDeathTracker:OnCombatLogEvent()
+  elseif event == "UNIT_DIED" then
+    Addon.PullDeathTracker:OnUnitDied(...)
   elseif event == "RAID_TARGET_UPDATE" then
     Addon.MarkerExecutor:OnRaidTargetUpdate()
   elseif event == "UPDATE_MACROS" then
@@ -142,7 +142,7 @@ for _, event in ipairs({
   "UPDATE_BINDINGS",
   "UPDATE_MACROS",
   "CVAR_UPDATE",
-  "COMBAT_LOG_EVENT_UNFILTERED",
+  "UNIT_DIED",
   "RAID_TARGET_UPDATE",
   "GROUP_ROSTER_UPDATE",
   "PLAYER_ROLES_ASSIGNED",

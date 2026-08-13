@@ -14,9 +14,9 @@ The active runtime inventory is defined by `MDTPullMarker.toc`.
 
 ## Repository assurance status
 
-The current rc58 tree does not contain the previously documented `tests/`, `scripts/`, `types/` or `docs/` directories. Those absent files are therefore not claimed as release evidence in this README.
+The current rc58 tree contains a focused Lua 5.1 regression harness in `tests/`. It covers the Midnight-safe `UNIT_DIED` event path and grouped marker-owner candidate filtering. The previously documented broader `scripts/`, `types/` and `docs/` directories are absent and are therefore not claimed as release evidence here.
 
-The checked-in validation workflow compiles Lua sources with Lua 5.1 and verifies the TOC inventory.
+The checked-in validation workflow compiles Lua sources with Lua 5.1, runs the focused regression harness and verifies the TOC inventory.
 
 The three historical duplicate source paths remain in the repository only as inert retired placeholders; active runtime code is defined by the TOC.
 

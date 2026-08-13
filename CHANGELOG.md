@@ -1,6 +1,12 @@
 # Changelog
 
-> Repository evidence note: the current public rc58 tree contains the runtime source and the checked-in GitHub validation workflow. Historical entries can describe verification assets from earlier development states; assets that are not present in the current tree are not treated as current release evidence. The current automated gate is Lua 5.1 compilation and TOC inventory validation.
+> Repository evidence note: the current public rc58 tree contains the runtime source and the checked-in GitHub validation workflow. Historical entries can describe verification assets from earlier development states; assets that are not present in the current tree are not treated as current release evidence. The current automated gate is Lua 5.1 compilation, focused regression tests and TOC inventory validation.
+
+## Unreleased
+
+- Replaced the restricted Midnight `COMBAT_LOG_EVENT_UNFILTERED` registration with the supported `UNIT_DIED` event and retained fail-closed handling for secret unit GUIDs.
+- Restricted grouped marker-owner candidates to eligible clients that actually announced a compatible owner protocol, so a tank or leader without MDT Pull Marker cannot suppress execution.
+- Added focused Lua 5.1 regression coverage for the event inventory, readable/restricted unit-death evidence and grouped ownership election.
 
 ## 1.0.0-rc58 — pre-combat route safety and repository cleanup
 

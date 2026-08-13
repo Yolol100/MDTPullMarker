@@ -180,7 +180,7 @@ local function buildDeathTracking(snapshotPull)
     available = available,
     expectedTotal = total,
     expectedByNPC = byNPC,
-    mode = available and "npc-death-gated" or "combat-boundary",
+    mode = available and "unit-death-gated" or "combat-boundary",
   }
 end
 
