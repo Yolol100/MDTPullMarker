@@ -1,20 +1,19 @@
 # Changelog
 
-## 1.0.0-rc58 — software-assurance closure and pre-combat route safety
+> Repository evidence note: the current public rc58 tree contains the runtime source and the checked-in GitHub validation workflow. Historical entries can describe verification assets from earlier development states; assets that are not present in the current tree are not treated as current release evidence. The current automated gate is Lua 5.1 compilation and TOC inventory validation.
 
-- Closed the remaining pre-combat stale-route window by synchronously parking managed execution on MDT enemy/pull mutation interactions outside combat; the 250 ms route watcher is now fallback detection rather than the primary safety barrier.
+## 1.0.0-rc58 — pre-combat route safety and repository cleanup
+
+- Closed the remaining pre-combat stale-route window by synchronously parking managed execution on MDT enemy/pull mutation interactions outside combat; the 250 ms route watcher is fallback detection rather than the primary safety barrier.
 - Freeze the validated execution contract when a route-changing interaction occurs during combat and force an out-of-combat invalidation/rebuild before execution resumes.
 - Added pre-sort scan, unique-key and aggregate budgets to route/clone/assignment identity collection so oversized or adversarial tables fail closed before unbounded sort/allocation work.
 - Made display/log clipping UTF-8 code-point safe while keeping external identifiers exact/reject-on-overlength.
-- Added executable resource, property/determinism, pinned MDT 6.1.20/6.2.1 compatibility and mutation-regression suites; five previously surviving safety mutants are now required to be killed.
-- Added a localization boundary with `Locale/enUS.lua` for normal user-facing UI/binding/tooltip strings and documented the localization contract for contributors.
-- Added bidirectional traceability, an SFMEA-style hazard register, security policy and dependency/provenance documentation.
-- Added a cryptographically pinned Lua Language Server workspace-diagnostic gate to CI, while preserving Lua 5.1 as the canonical language-runtime gate.
-- Made runtime/source ZIPs reproducible across clean checkouts by fixing archive timestamps, permissions and ordering; package verification rejects duplicate members, unexpected roots/inventory, unsafe paths and source symlinks.
+- Added a localization boundary with `Locale/enUS.lua` for normal user-facing UI, binding and tooltip strings.
 - Expanded route mutation watching across bound and legacy/current-route mode and fail closed when previously readable route data disappears.
 - Bounded persisted diagnostics, closed schema-12 normalization to an allowlist, sanitized migration backups, blocked future-schema execution, and required an explicit positive death verdict for automatic pull completion.
-- Pinned CI to Ubuntu 24.04 with read-only contents permissions and a reviewed checkout commit.
-- Updated architecture/safety/live-test/release verification documentation and bumped runtime/package identity to `1.0.0-rc58`.
+- The current repository gate compiles all Lua with Lua 5.1 and verifies every active TOC path.
+- The current public tree does not include the previously documented regression/property/mutation suites, LuaCATS/type workspace, packaging scripts or assurance-document directories; those absent assets are not claimed as current release evidence.
+- Bumped runtime/package identity to `1.0.0-rc58`.
 
 ## 1.0.0-rc56 — MAP safety, architecture and verification hardening
 
@@ -27,8 +26,8 @@
 - Added synchronous dungeon/session invalidation before ownership refresh on world transitions.
 - Added `DataUtils.ValidatedString` and switched persisted route identifiers to reject overlength values instead of silently truncating identity.
 - Renamed `Runtime/PullController.lua` → `Runtime/RuntimeController.lua`, `UI/Configuration.lua` → `UI/ConfigurationUI.lua`, and `Integrations/MDTUI.lua` → `Integrations/MDTIntegration.lua` so file names match public module names.
-- Added LuaCATS model declarations, `.luarc.json`, `.stylua.toml`, GitHub Actions CI, executable Lua regression tests, static repository contracts, deterministic package verification and architecture/safety/live-test documentation.
-- Bumped runtime, TOC and documentation identity to `1.0.0-rc56`.
+- Historical rc56 development included additional static/test/package assurance work; see the repository evidence note above when interpreting assets that are not present in the current rc58 tree.
+- Bumped runtime, TOC and documentation identity to rc56.
 
 ## 1.0.0-rc55 — communication recovery + current combat-log reader
 
@@ -41,4 +40,4 @@
 - Bounded localized creature-name caching to 4,096 entries.
 - Hardened completion handling around asynchronous callbacks and zero readable death evidence.
 
-Earlier release history is intentionally not re-expanded in this locally materialized modernization package. The original repository at source commit `90df33a78e43baeab461d6a54e8981d50683d4f3` remains the provenance source for the full pre-rc54 historical changelog.
+Earlier release history is intentionally not re-expanded in this modernization package. The original repository at source commit `90df33a78e43baeab461d6a54e8981d50683d4f3` remains the provenance source for the full pre-rc54 historical changelog.
