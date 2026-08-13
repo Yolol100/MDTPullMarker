@@ -1,0 +1,101 @@
+name: Recover and materialize rc57 source
+
+on:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/agent/rc57-complete-audit-fixes' && contains(github.event.head_commit.message, '[recover-rc57]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Recover and verify transfer
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          root = Path('.rc57-materialize')
+          expected = {
+              15: '26b47c79969fe62155b27bf14d5bfaf361bf9a4c',
+              16: '1fcfe31300255947b440839291535f9b81f27fba',
+              17: '1c9d0f36b9da638666c5090cd41e02f12883485e',
+          }
+          alphabet = b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+          def find_window(wanted, sources, size=8000):
+              for source in sources:
+                  raw = source.read_bytes()
+                  if len(raw) == size and blob_sha(raw) == wanted:
+                      return raw
+                  for start in range(max(0, len(raw) - size + 1)):
+                      candidate = raw[start:start + size]
+                      if len(candidate) == size and blob_sha(candidate) == wanted:
+                          return candidate
+              raise SystemExit(f'could not recover {wanted}')
+
+          recovered = {}
+          sources = [root / 'part-015', root / 'part-016']
+          recovered[15] = find_window(expected[15], sources)
+          recovered[16] = find_window(expected[16], sources)
+
+          raw17 = (root / 'part-017').read_bytes()
+          if len(raw17) == 8000 and blob_sha(raw17) == expected[17]:
+              recovered[17] = raw17
+          elif len(raw17) == 7999:
+              found = None
+              for pos in range(len(raw17) + 1):
+                  for ch in alphabet:
+                      candidate = raw17[:pos] + bytes((ch,)) + raw17[pos:]
+                      if blob_sha(candidate) == expected[17]:
+                          found = candidate
+                          break
+                  if found is not None:
+                      break
+              if found is None:
+                  raise SystemExit('could not recover part-017')
+              recovered[17] = found
+          else:
+              raise SystemExit(f'unexpected part-017 length: {len(raw17)}')
+
+          with Path('/tmp/rc57.b64').open('wb') as output:
+              for index in range(19):
+                  if index == 9:
+                      data = (root / 'part-009-fixed').read_bytes()
+                  else:
+                      data = recovered.get(index, (root / f'part-{index:03d}').read_bytes())
+                  wanted_size = 1028 if index == 18 else 8000
+                  if len(data) != wanted_size:
+                      raise SystemExit(f'part-{index:03d}: {len(data)} bytes, expected {wanted_size}')
+                  output.write(data)
+          PY
+
+          base64 -d /tmp/rc57.b64 > /tmp/rc57-source.tar.gz
+          echo "cb1536d14adcb5d0fe9b2a5d3b8113a4b05632e64f8aad8965663f25f1ee9da8  /tmp/rc57-source.tar.gz" | sha256sum -c -
+          rm -rf /tmp/rc57
+          mkdir -p /tmp/rc57
+          tar -xzf /tmp/rc57-source.tar.gz -C /tmp/rc57
+          test "$(find /tmp/rc57/MDTPullMarker-source-1.0.0-rc57 -type f | wc -l)" -eq 46
+
+      - name: Replace branch with verified source
+        shell: bash
+        run: |
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/rc57/MDTPullMarker-source-1.0.0-rc57/. .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Materialize rc57 audit hardening"
+          git push
