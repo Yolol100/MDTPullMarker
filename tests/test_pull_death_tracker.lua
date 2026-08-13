@@ -9,8 +9,8 @@ end
 local pull = {
   deathTracking = {
     available = true,
-    expectedTotal = 1,
-    expectedByNPC = { [123] = 1 },
+    expectedTotal = 2,
+    expectedByNPC = { [123] = 2 },
     mode = "unit-death-gated",
   },
 }
@@ -35,11 +35,23 @@ chunk("MDTPullMarker", Addon)
 local Tracker = assert(Addon.PullDeathTracker)
 
 Tracker:Initialize()
+local outside, outsideReason = Tracker:OnUnitDied("Creature-0-0-0-0-123-0000000000")
+assert(outside == false and outsideReason == "outside-combat", tostring(outsideReason))
+
 Tracker:OnCombatStarted()
 local accepted, progressReason = Tracker:OnUnitDied("Creature-0-0-0-0-123-0000000001")
-assert(accepted == true, progressReason)
-assert(progressReason == "expected-pull-deaths-observed", progressReason)
+assert(accepted == true and progressReason == "pull-death-progress", tostring(progressReason))
 local complete, verdict = Tracker:GetCompletionVerdict(1)
+assert(complete == false and verdict == "death-incomplete", tostring(verdict))
+
+local duplicate, duplicateReason = Tracker:OnUnitDied("Creature-0-0-0-0-123-0000000001")
+assert(duplicate == false and duplicateReason == "death-already-counted", tostring(duplicateReason))
+local unrelated, unrelatedReason = Tracker:OnUnitDied("Creature-0-0-0-0-999-0000000001")
+assert(unrelated == false and unrelatedReason == "death-not-active-pull-npc", tostring(unrelatedReason))
+
+accepted, progressReason = Tracker:OnUnitDied("Creature-0-0-0-0-123-0000000002")
+assert(accepted == true and progressReason == "expected-pull-deaths-observed", tostring(progressReason))
+complete, verdict = Tracker:GetCompletionVerdict(1)
 assert(complete == true and verdict == "death-complete", tostring(verdict))
 Tracker:OnCombatEnded()
 
@@ -48,5 +60,12 @@ local restricted, restrictedReason = Tracker:OnUnitDied(SECRET)
 assert(restricted == false and restrictedReason == "unit-died-guid-secret", tostring(restrictedReason))
 local restrictedVerdict, restrictedStatus = Tracker:GetCompletionVerdict(1)
 assert(restrictedVerdict == nil and restrictedStatus == "death-tracking-restricted", tostring(restrictedStatus))
+Tracker:OnCombatEnded()
+
+Tracker:OnCombatStarted()
+local missing, missingReason = Tracker:OnUnitDied(nil)
+assert(missing == false and missingReason == "unit-died-guid-unavailable", tostring(missingReason))
+local missingVerdict, missingStatus = Tracker:GetCompletionVerdict(1)
+assert(missingVerdict == false and missingStatus == "death-tracking-unavailable", tostring(missingStatus))
 
 print("ok - pull death tracker")
