@@ -1,0 +1,40 @@
+name: Materialize rc57 source
+
+on:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.ref == 'refs/heads/agent/rc57-complete-audit-fixes' && contains(github.event.head_commit.message, '[materialize-rc57]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Reconstruct verified source archive
+        shell: bash
+        run: |
+          cat .rc57-materialize/part-* > /tmp/rc57.b64
+          base64 -d /tmp/rc57.b64 > /tmp/rc57-source.tar.gz
+          echo "cb1536d14adcb5d0fe9b2a5d3b8113a4b05632e64f8aad8965663f25f1ee9da8  /tmp/rc57-source.tar.gz" | sha256sum -c -
+          rm -rf /tmp/rc57
+          mkdir -p /tmp/rc57
+          tar -xzf /tmp/rc57-source.tar.gz -C /tmp/rc57
+      - name: Materialize source tree
+        shell: bash
+        run: |
+          cp .github/workflows/materialize-rc57.yml /tmp/materialize-rc57.yml
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .rc57-materialize -exec rm -rf {} +
+          cp -a /tmp/rc57/MDTPullMarker-source-1.0.0-rc57/. .
+          mkdir -p .github/workflows
+          cp /tmp/materialize-rc57.yml .github/workflows/materialize-rc57.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Materialize rc57 audit hardening"
+          git push

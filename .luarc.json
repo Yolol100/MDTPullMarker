@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime.version": "Lua 5.1",
+  "runtime.pathStrict": true,
+  "workspace.checkThirdParty": false,
+  "workspace.ignoreDir": [".git", "dist", "build"],
+  "diagnostics.workspaceDelay": 1000,
+  "diagnostics.workspaceRate": 75,
+  "diagnostics.globals": [
+    "C_AddOns", "C_ChallengeMode", "C_ChatInfo", "C_CombatLog", "C_CVar", "C_Timer", "C_TooltipInfo",
+    "CreateFrame", "CreateMacro", "EditMacro", "DeleteMacro", "PickupMacro", "GetMacroInfo", "GetNumMacros",
+    "GetMacroIndexByName", "GetFileIDFromPath", "MAX_ACCOUNT_MACROS", "UIParent", "GameTooltip",
+    "GetTime", "GetTimePreciseSec", "GetLocale", "GetBuildInfo", "GetInstanceInfo", "GetDifficultyInfo",
+    "IsInInstance", "IsInGroup", "IsInRaid", "InCombatLockdown", "UnitFullName", "UnitName",
+    "UnitIsDeadOrGhost", "UnitIsGroupLeader", "UnitGroupRolesAssigned", "GetNumGroupMembers",
+    "GetNormalizedRealmName", "GetRealmName", "GetRaidTargetIndex", "GetCVarBool", "GetAddOnMetadata",
+    "IsAddOnLoaded", "LoadAddOn", "issecretvalue", "hooksecurefunc", "debugstack", "date", "SlashCmdList",
+    "SLASH_MDTPULLMARKER1", "SLASH_MDTPULLMARKER2", "SLASH_MDTPULLMARKER3",
+    "MDTPullMarker_Open", "MDTPullMarker_CompartmentEnter", "MDTPullMarker_CompartmentLeave",
+    "BINDING_HEADER_MDTPULLMARKER"
+  ]
+}
