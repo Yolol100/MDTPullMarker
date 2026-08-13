@@ -28,4 +28,4 @@ All marker operators in a group should use a current build.
 
 ## Repository validation
 
-The checked-in GitHub workflow installs Lua 5.1, compiles the Lua source, runs focused lifecycle/ownership regression tests and verifies the active TOC inventory. The current public rc58 tree does not contain the previously documented broader static-analysis or packaging suites; those absent assets are not current automated release evidence.
+The checked-in GitHub workflows install Lua 5.1, compile the Lua source, run focused event/death and ownership-guard regressions, and verify the active TOC inventory. The current public rc58 tree does not contain the previously documented broader static-analysis or packaging suites; those absent assets are not current automated release evidence.
