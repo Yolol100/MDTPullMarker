@@ -3,6 +3,7 @@ local files = {
   "tests/test_pull_death_tracker.lua",
   "tests/test_marker_ownership.lua",
   "tests/test_migrations.lua",
+  "tests/test_mdt_focus_marker_bridge.lua",
 }
 
 for _, path in ipairs(files) do
