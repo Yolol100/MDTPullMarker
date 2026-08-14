@@ -187,10 +187,7 @@ local function migrateEightToNine(rawDB)
 end
 
 local function migrateNineToTen(rawDB)
-  -- Keep the legacy single-route binding intact for the 10 -> 11 step, where
-  -- it is converted into the routeBindings map. Clearing it here would lose
-  -- saved route identity for every upgrade that enters the chain at schema 9
-  -- or older.
+  rawDB.routeBinding = nil
   rawDB.schemaVersion = 10
   return rawDB
 end
