@@ -38,7 +38,7 @@ end
 local function pickupMacro(index)
   if inCombat() then state.lastError = "Leave combat first to place or update macros." UI:Refresh() return end
   local binding = activeRouteBinding(); local session = Addon.DungeonSession:GetState()
-  if not binding and session.active ~= true then state.lastError = "Bind an MDT route first, or enter the dungeon for legacy macro mode." UI:Refresh() return end
+  if not binding and session.active ~= true then state.lastError = "Bind an MDT route first, or enter the dungeon to use automatic marker macros." UI:Refresh() return end
   local snapshot, snapshotError = Addon.MDT:Refresh("ui-macro-pickup", { allowUILoad = true })
   if not snapshot then state.lastError = "Open the correct MDT route first." Addon.Log("WARN", "UI macro pickup route refresh failed: "..tostring(snapshotError), false) UI:Refresh() return end
   local runtime, runtimeError = Addon.RuntimeController:Refresh("ui-macro-pickup", true)
@@ -86,11 +86,11 @@ local function refreshView(view, model)
   elseif bound then view.macro:SetText(("|cffffad33Preparing route macros: %d/%d|r"):format(routeMacros.currentCount or 0, routeMacros.desiredCount or 0))
   elseif not model.dungeonActive then view.macro:SetText(("|cffb8b8b8"..(L.WAITING_FOR_DUNGEON or "Waiting for dungeon").."|r"))
   elseif problem then view.macro:SetText("|cffff5959"..problem.."|r")
-  elseif model.runtime and model.runtime.automaticTargeting == false then view.macro:SetText(("|cffffad33"..(L.SAME_NAME_PARKED or "Same-name pull parked safely").."|r"))
+  elseif model.runtime and model.runtime.automaticTargeting == false then view.macro:SetText(("|cffffad33"..(L.SAME_NAME_PARKED or "Manual targeting required for this pull").."|r"))
   elseif model.macro1.current and model.macro2.current then view.macro:SetText("|cff59df80Macros ready: MDTPM1 + MDTPM2|r")
-  elseif model.combat then view.macro:SetText(("|cffffad33"..(L.MACROS_UPDATE_AFTER_COMBAT or "Macros update after combat").."|r")) else view.macro:SetText(("|cffffad33"..(L.PREPARING_MACROS or "Preparing macros...").."|r")) end
+  elseif model.combat then view.macro:SetText(("|cffffad33"..(L.MACROS_UPDATE_AFTER_COMBAT or "Marker macros update after combat").."|r")) else view.macro:SetText(("|cffffad33"..(L.PREPARING_MACROS or "Preparing marker macros...").."|r")) end
 
-  if not bound then view.guide:SetText("Select the route you want in MDT, then click Bind route. Legacy mode still activates automatically in a dungeon.")
+  if not bound then view.guide:SetText("Select the route you want in MDT, then click Bind route. Without a bound route, marker macros activate automatically in a dungeon.")
   elseif model.planStatus == "blocked" then view.guide:SetText("|cffff5959This pull can’t be marked automatically. Run /mpm doctor for details.|r")
   elseif model.planStatus == "unavailable" then view.guide:SetText("|cffff5959Marker plan isn’t ready. Run /mpm doctor for details.|r")
   else
@@ -101,7 +101,7 @@ local function refreshView(view, model)
       view.guide:SetText(text..". You may use a later pull macro early for a chain-pull.")
     else
       local submission = model.executor and model.executor.bulkSubmission; local flowText = submission and submission.batch2Required and "MDTPM1  ->  wait ~4 sec  ->  MDTPM2" or "MDTPM1"
-      if submission and submission.allRequired then flowText = "Markers submitted • next marked pull loads after combat" elseif submission and submission.batch1 and submission.batch2Required then flowText = "MDTPM1 submitted  ->  wait ~4 sec  ->  MDTPM2" elseif submission and submission.batch1 and not submission.batch2Required then flowText = "MDTPM1 submitted • next marked pull loads after combat" end
+      if submission and submission.allRequired then flowText = "Markers applied • next marked pull loads after combat" elseif submission and submission.batch1 and submission.batch2Required then flowText = "Marker macro 1 applied  ->  wait ~4 sec  ->  marker macro 2" elseif submission and submission.batch1 and not submission.batch2Required then flowText = "Marker macro 1 applied • next marked pull loads after combat" end
       local targetingText = model.runtime and model.runtime.automaticTargeting == false and Addon.Constants.AutomaticTargetingWarning or nil
       view.guide:SetText(targetingText or flowText)
     end
