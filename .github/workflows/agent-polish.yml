@@ -1,0 +1,115 @@
+name: Apply MDT Pull Marker polish
+
+on:
+  push:
+    branches:
+      - agent/frontend-backend-polish
+    paths:
+      - '.github/workflows/agent-polish.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/frontend-backend-polish
+      - name: Apply frontend and backend polish
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_all(path, replacements):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              for old, new in replacements:
+                  if old not in text:
+                      raise SystemExit(f'missing expected text in {path}: {old!r}')
+                  text = text.replace(old, new)
+              p.write_text(text, encoding='utf-8')
+
+          replace_all('Locale/enUS.lua', [
+              ('L.WAITING_FOR_DUNGEON = "Waiting for dungeon"', 'L.WAITING_FOR_DUNGEON = "Waiting for dungeon..."'),
+              ('L.PREPARING_MACROS = "Preparing macros..."', 'L.PREPARING_MACROS = "Preparing marker macros..."'),
+              ('L.MACROS_UPDATE_AFTER_COMBAT = "Macros update after combat"', 'L.MACROS_UPDATE_AFTER_COMBAT = "Marker macros update after combat"'),
+              ('L.SAME_NAME_PARKED = "Same-name pull parked safely"', 'L.SAME_NAME_PARKED = "Manual targeting required for this pull"'),
+              ('L.ROUTE_MACROS_REFRESH_AFTER_COMBAT = "Route macros refresh after combat"', 'L.ROUTE_MACROS_REFRESH_AFTER_COMBAT = "Route macros update after combat"'),
+              ('L.MARKED_PULL_NEEDS_ATTENTION = "Marked pull needs attention in MDT"', 'L.MARKED_PULL_NEEDS_ATTENTION = "This pull needs attention in MDT"'),
+              ('L.ELECTING_OWNER = "Electing party marker owner..."', 'L.ELECTING_OWNER = "Choosing who applies party markers..."'),
+          ])
+
+          replace_all('UI/ConfigurationUI.lua', [
+              ('"Macro name conflict - rename the existing "', '"Macro name conflict - rename the existing "'),
+              ('"Route macros prepared and safely parked: %d/%d"', '"Route macros ready but inactive: %d/%d"'),
+              ('"Route macro repair waits until combat ends"', '"Route macros update after combat"'),
+              ('"This pull cannot be built safely. Check /mpm doctor."', '"This pull can’t be marked automatically. Run /mpm doctor for details."'),
+              ('"Marker plan is not ready. Check /mpm doctor."', '"Marker plan isn’t ready. Run /mpm doctor for details."'),
+              ('makeButton(root, "Open MDT markers", 145', 'makeButton(root, "Open MDT map", 145'),
+              ('makeButton(root, "Bind selected route", 150', 'makeButton(root, "Bind route", 150'),
+              ('view.pick1:SetText(bound and "Pick current A" or "Pick up MDTPM1")', 'view.pick1:SetText(bound and "Pick up A macro" or "Pick up marker macro 1")'),
+              ('view.pick2:SetText(bound and "Pick current B" or "Pick up MDTPM2")', 'view.pick2:SetText(bound and "Pick up B macro" or "Pick up marker macro 2")'),
+              ('view.pick3:SetText("Pick current C")', 'view.pick3:SetText("Pick up C macro")'),
+          ])
+
+          replace_all('UI/RuntimeFrame.lua', [
+              ('frame.title:SetText(("Pull %s / %s")', 'frame.title:SetText(("Pull %s of %s")'),
+              ('"|cff8fa3b8Passive - "..tostring(ownership.owner).." is marker owner|r"', '"|cff8fa3b8"..tostring(ownership.owner).." is applying party markers|r"'),
+              ('"|cffffad33Route macros parked until this dungeon/client is active|r"', '"|cffffad33Route macros are ready but inactive for this dungeon|r"'),
+              ('"This client stays idle to prevent duplicate party marking."', '"Pull Marker stays inactive here to prevent duplicate markers."'),
+              ('"Current pull markers submitted • overlap tracking active until combat ends"', '"Current pull markers applied • tracking remains active until combat ends"'),
+              ('"Markers submitted • next marked pull loads after combat"', '"Markers applied • next marked pull loads after combat"'),
+              ('"MDTPM1 submitted  ->  wait ~4 sec  ->  MDTPM2"', '"Marker macro 1 applied  ->  wait ~4 sec  ->  marker macro 2"'),
+              ('"Markers submitted - waiting for combat to end before loading the next MDT pull."', '"Markers applied - waiting for combat to end before loading the next MDT pull."'),
+          ])
+
+          executor = Path('Runtime/MarkerExecutor.lua')
+          text = executor.read_text(encoding='utf-8')
+          anchor = 'local function markerOwnerAllowsExecution() local owner, reason, ownerName = Addon.MarkerOwnership:IsOwner() if owner then return true, reason, ownerName end return false, reason or "marker-owner-passive", ownerName end\n'
+          helper = anchor + '''local function validateExecutionContext(runtimeState, requirePlan)\n  if executionInvalidated then return nil, executionInvalidationReason or "execution-invalidated" end\n  if requirePlan and (not runtimeState or runtimeState.planStatus == "blocked") then return nil, "plan-blocked" end\n  local session = Addon.DungeonSession:GetState(); if not session then return nil, "dungeon-session-unavailable" end\n  if session.challengeCompleted then return nil, "challenge-completed" end\n  if not liveDungeonActive() or not session.active then return nil, "outside-dungeon" end\n  if session.routeMatches == false then return nil, "route-instance-mismatch" end\n  if session.routeMatches ~= true then return nil, "route-instance-unverified" end\n  local ownerAllowed, ownerError = markerOwnerAllowsExecution(); if not ownerAllowed then return nil, ownerError end\n  return session\nend\n'''
+          if anchor not in text:
+              raise SystemExit('executor helper anchor missing')
+          text = text.replace(anchor, helper, 1)
+
+          instruction_old = '''  if executionInvalidated then return nil, executionInvalidationReason or "execution-invalidated" end\n  local runtimeState = Addon.RuntimeController:GetState(); if not runtimeState or runtimeState.planStatus == "blocked" then return nil, "plan-blocked" end\n  local session = Addon.DungeonSession:GetState(); if not session then return nil, "dungeon-session-unavailable" end\n  if session.challengeCompleted then return nil, "challenge-completed" end\n  if not liveDungeonActive() or not session.active then return nil, "outside-dungeon" end\n  if session.routeMatches == false then return nil, "route-instance-mismatch" end\n  if session.routeMatches ~= true then return nil, "route-instance-unverified" end\n  local ownerAllowed, ownerError = markerOwnerAllowsExecution(); if not ownerAllowed then return nil, ownerError end\n'''
+          instruction_new = '''  local runtimeState = Addon.RuntimeController:GetState()\n  local session, contextError = validateExecutionContext(runtimeState, true); if not session then return nil, contextError end\n'''
+          if text.count(instruction_old) < 2:
+              raise SystemExit(f'expected duplicated execution checks, found {text.count(instruction_old)}')
+          text = text.replace(instruction_old, instruction_new, 2)
+
+          route_old = '''  if executionInvalidated then return false, executionInvalidationReason or "execution-invalidated" end\n  local session = Addon.DungeonSession and Addon.DungeonSession:GetState() or nil\n  if type(session) ~= "table" or session.active ~= true or not liveDungeonActive() then return false, "outside-dungeon" end\n  if session.challengeCompleted == true then return false, "challenge-completed" end\n  if session.routeMatches == false then return false, "route-instance-mismatch" end\n  if session.routeMatches ~= true then return false, "route-instance-unverified" end\n  local ownerAllowed, ownerError = markerOwnerAllowsExecution(); if not ownerAllowed then return false, ownerError or "marker-owner-passive" end\n  return true\n'''
+          route_new = '''  local session, contextError = validateExecutionContext(nil, false)\n  if not session then return false, contextError end\n  return true\n'''
+          if route_old not in text:
+              raise SystemExit('route execution gate block missing')
+          text = text.replace(route_old, route_new, 1)
+          executor.write_text(text, encoding='utf-8')
+
+          controller = Path('Runtime/RuntimeController.lua')
+          text = controller.read_text(encoding='utf-8')
+          sig = '  local markerPlanChanged = state.activePlanSignature and state.activePlanSignature ~= nextPlanSignature\n'
+          if sig not in text:
+              raise SystemExit('runtime signature anchor missing')
+          text = text.replace(sig, sig + '  local previousRouteMacroPlan = state.routeMacroPlan\n', 1)
+          old_build = '''  state.routeMacroPlan = nil\n  state.lastRouteMacroError = nil\n  if plan.status ~= "blocked" and Addon.RouteMacroPlan and type(Addon.RouteMacroPlan.Build) == "function" then\n    local routeMacroPlan, routeMacroError = Addon.RouteMacroPlan.Build(plan)\n    state.routeMacroPlan, state.lastRouteMacroError = routeMacroPlan, routeMacroError\n  elseif plan.status == "blocked" then state.lastRouteMacroError = "marker-plan-blocked"\n  else state.lastRouteMacroError = "route-macro-planner-unavailable" end\n'''
+          new_build = '''  state.routeMacroPlan = nil\n  state.lastRouteMacroError = nil\n  if plan.status ~= "blocked" and Addon.RouteMacroPlan and type(Addon.RouteMacroPlan.Build) == "function" then\n    if not routeChanged and not markerPlanChanged and previousRouteMacroPlan then\n      state.routeMacroPlan = previousRouteMacroPlan\n    else\n      local routeMacroPlan, routeMacroError = Addon.RouteMacroPlan.Build(plan)\n      state.routeMacroPlan, state.lastRouteMacroError = routeMacroPlan, routeMacroError\n    end\n  elseif plan.status == "blocked" then state.lastRouteMacroError = "marker-plan-blocked"\n  else state.lastRouteMacroError = "route-macro-planner-unavailable" end\n'''
+          if old_build not in text:
+              raise SystemExit('route macro build block missing')
+          text = text.replace(old_build, new_build, 1)
+          controller.write_text(text, encoding='utf-8')
+          PY
+      - name: Install Lua 5.1
+        run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: Run regression suite
+        run: lua5.1 tests/run.lua
+      - name: Commit polished implementation
+        shell: bash
+        run: |
+          git config user.name 'OpenAI Agent'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Locale/enUS.lua UI/ConfigurationUI.lua UI/RuntimeFrame.lua Runtime/MarkerExecutor.lua Runtime/RuntimeController.lua
+          git diff --cached --check
+          git commit -m 'Polish existing frontend and backend behavior'
+          git push origin HEAD:agent/frontend-backend-polish
