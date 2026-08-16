@@ -1,4 +1,4 @@
-name: Apply MDT Pull Marker audit fixes
+name: Validate MDT Pull Marker audit fixes
 
 on:
   push:
@@ -8,148 +8,28 @@ on:
       - '.github/workflows/agent-audit-fixes.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
+  validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/audit-fixes-20260816
-          fetch-depth: 0
-      - name: Apply bounded audit fixes
+      - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: Compile and regress
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              if text.count(old) != 1:
-                  raise SystemExit(f'{path}: expected one match, found {text.count(old)}')
-              p.write_text(text.replace(old, new, 1), encoding='utf-8')
-
-          # 1) Verify the current upstream version explicitly and broaden official mutation hooks.
-          replace_once(
-              'Integrations/MDTAdapter.lua',
-              '  ["6.2.1"] = true,\n}',
-              '  ["6.2.1"] = true,\n  ["6.2.2"] = true,\n}'
-          )
-
-          old_hooks = '''local function installRouteMutationHooks()\n  if routeMutationHooksInstalled then return true end\n  local mixin = _G.MDTDungeonEnemyMixin\n  if type(mixin) ~= "table" or type(hooksecurefunc) ~= "function" then return nil, "mdt-route-mutation-hook-unavailable" end\n  local installed = 0\n  for _, methodName in ipairs({ "OnMouseDown", "OnClick", "OnDragStart", "OnDragStop" }) do\n    if type(mixin[methodName]) == "function" then\n      local ok = pcall(hooksecurefunc, mixin, methodName, function() onPotentialRouteMutation(nil, "mdt-route-interaction:"..methodName) end)\n      if ok then installed = installed + 1 end\n    end\n  end\n  if installed == 0 then return nil, "mdt-route-mutation-methods-unavailable" end\n  routeMutationHooksInstalled = true\n  return true\nend'''
-          new_hooks = '''local function installRouteMutationHooks()\n  if routeMutationHooksInstalled then return true end\n  if type(hooksecurefunc) ~= "function" then return nil, "mdt-route-mutation-hook-unavailable" end\n\n  local installed = 0\n  local function install(target, methodName, reasonPrefix)\n    if type(target) ~= "table" or type(target[methodName]) ~= "function" then return end\n    local ok = pcall(hooksecurefunc, target, methodName, function()\n      onPotentialRouteMutation(nil, tostring(reasonPrefix)..tostring(methodName))\n    end)\n    if ok then installed = installed + 1 end\n  end\n\n  -- MDT 6.2.2 mutates enemy membership through the public MDT method during\n  -- both click and drag-preview flows. Hook the mutator itself so drag scripts\n  -- do not depend on mixin method names that are installed via SetScript.\n  local mixin = _G.MDTDungeonEnemyMixin\n  install(mixin, "OnClick", "mdt-route-interaction:")\n  install(mixin, "SetUp", "mdt-enemy-setup:")\n\n  local mdt = type(_G.MDT) == "table" and _G.MDT or nil\n  install(mdt, "DungeonEnemies_AddOrRemoveBlipToCurrentPull", "mdt-route-mutator:")\n  install(mdt, "PresetsAddPull", "mdt-route-mutator:")\n\n  if installed == 0 then return nil, "mdt-route-mutation-methods-unavailable" end\n  routeMutationHooksInstalled = true\n  return true\nend'''
-          replace_once('Integrations/MDTAdapter.lua', old_hooks, new_hooks)
-
-          anchor = '''local function ensureRouteWatch()\n  if routeWatchTicker or type(C_Timer) ~= "table" or type(C_Timer.NewTicker) ~= "function" then return end\n  routeWatchTicker = C_Timer.NewTicker(0.25, runRouteWatchTick)\nend\n'''
-          freshness = anchor + '''\nfunction Adapter:ValidateExecutionFreshness(reason)\n  -- Last synchronous fail-closed check at combat entry. Official MDT mutation\n  -- paths are hooked out of combat; this additionally catches direct/programmatic\n  -- DB edits that occurred between route-watch ticks. Reading the route is safe\n  -- in combat even though protected macro writes are not.\n  local signature, signatureError = lightweightRouteSignature()\n  if not signature then\n    invalidateExecution((reason or "execution-freshness")..":route-data-unavailable")\n    routeMutationObservedInCombat = true\n    return false, signatureError or "route-data-unavailable"\n  end\n  if not routeWatchSignature then\n    invalidateExecution((reason or "execution-freshness")..":baseline-unavailable")\n    routeMutationObservedInCombat = true\n    return false, "route-watch-baseline-unavailable"\n  end\n  if routeWatchSignature ~= signature then\n    invalidateExecution((reason or "execution-freshness")..":route-changed")\n    routeMutationObservedInCombat = true\n    return false, "route-signature-changed"\n  end\n  return true, signature\nend\n'''
-          replace_once('Integrations/MDTAdapter.lua', anchor, freshness)
-
-          # 2) Run that synchronous freshness check before combat ownership freezes.
-          replace_once(
-              'Core/Events.lua',
-              '''  elseif event == "PLAYER_REGEN_DISABLED" then\n    Addon.PullDeathTracker:OnCombatStarted()\n    Addon.MarkerOwnership:OnCombatStarted()''',
-              '''  elseif event == "PLAYER_REGEN_DISABLED" then\n    if Addon.MDT and type(Addon.MDT.ValidateExecutionFreshness) == "function" then\n      Addon.MDT:ValidateExecutionFreshness("combat-start")\n    end\n    Addon.PullDeathTracker:OnCombatStarted()\n    Addon.MarkerOwnership:OnCombatStarted()'''
-          )
-
-          # 3) Decouple owner protocol compatibility from the marketing RC suffix,
-          # while continuing to understand existing rc52+ peers.
-          replace_once(
-              'Runtime/MarkerOwnership.lua',
-              'local MIN_COMPATIBLE_OWNER_PROTOCOL_RC = 52\n',
-              'local OWNER_PROTOCOL_VERSION = 1\nlocal MIN_COMPATIBLE_OWNER_PROTOCOL_VERSION = 1\nlocal LEGACY_MIN_COMPATIBLE_OWNER_PROTOCOL_RC = 52\n'
-          )
-          old_proto = '''local function peerReleaseCandidate(peer)\n  local version = peer and peer.version\n  if type(version) ~= "string" then return nil end\n  return tonumber(version:match("%-rc(%d+)$"))\nend\n\nlocal function peerUsesHeartbeat(peer)\n  local rc = peerReleaseCandidate(peer)\n  return rc and rc >= 41 or false\nend\n\nlocal function peerOwnerProtocolCompatible(peer)\n  local rc = peerReleaseCandidate(peer)\n  return rc and rc >= MIN_COMPATIBLE_OWNER_PROTOCOL_RC or false\nend'''
-          new_proto = '''local function peerReleaseCandidate(peer)\n  local version = peer and peer.version\n  if type(version) ~= "string" then return nil end\n  return tonumber(version:match("%-rc(%d+)$"))\nend\n\nlocal function peerOwnerProtocolVersion(peer)\n  local explicit = peer and tonumber(peer.ownerProtocolVersion)\n  if explicit and explicit >= 1 and explicit % 1 == 0 then return explicit end\n  local rc = peerReleaseCandidate(peer)\n  if rc and rc >= LEGACY_MIN_COMPATIBLE_OWNER_PROTOCOL_RC then return 1 end\n  return nil\nend\n\nlocal function peerUsesHeartbeat(peer)\n  if peerOwnerProtocolVersion(peer) then return true end\n  local rc = peerReleaseCandidate(peer)\n  return rc and rc >= 41 or false\nend\n\nlocal function peerOwnerProtocolCompatible(peer)\n  local protocol = peerOwnerProtocolVersion(peer)\n  return protocol and protocol >= MIN_COMPATIBLE_OWNER_PROTOCOL_VERSION or false\nend'''
-          replace_once('Runtime/MarkerOwnership.lua', old_proto, new_proto)
-
-          replace_once(
-              'Runtime/MarkerOwnership.lua',
-              '  local payload = table.concat({ tostring(kind or "H"), tostring(Addon.Version or "unknown"), state.localEligible and "1" or "0" }, "|")',
-              '  local payload = table.concat({ tostring(kind or "H"), tostring(Addon.Version or "unknown"), state.localEligible and "1" or "0", tostring(OWNER_PROTOCOL_VERSION) }, "|")'
-          )
-
-          old_parse = '''  local kind, version, eligible = tostring(message or ""):match("^([^|]+)|([^|]*)|([01])$")\n  if kind ~= "H" and kind ~= "R" and kind ~= "B" then return false end\n  state.peers[senderKey] = {\n    name = sender,\n    version = safeString(version, 40),\n    eligible = eligible == "1",\n    lastSeen = now(),\n    channel = channel,\n  }'''
-          new_parse = '''  local rawMessage = tostring(message or "")\n  local kind, version, eligible, ownerProtocol = rawMessage:match("^([^|]+)|([^|]*)|([01])|(%d+)$")\n  if not kind then\n    kind, version, eligible = rawMessage:match("^([^|]+)|([^|]*)|([01])$")\n  end\n  if kind ~= "H" and kind ~= "R" and kind ~= "B" then return false end\n  local parsedProtocol = tonumber(ownerProtocol)\n  if parsedProtocol and (parsedProtocol < 1 or parsedProtocol > 255 or parsedProtocol % 1 ~= 0) then return false end\n  state.peers[senderKey] = {\n    name = sender,\n    version = safeString(version, 40),\n    ownerProtocolVersion = parsedProtocol,\n    eligible = eligible == "1",\n    lastSeen = now(),\n    channel = channel,\n  }'''
-          replace_once('Runtime/MarkerOwnership.lua', old_parse, new_parse)
-
-          replace_once(
-              'Runtime/MarkerOwnership.lua',
-              '    minimumCompatibleOwnerProtocolRC = MIN_COMPATIBLE_OWNER_PROTOCOL_RC,\n',
-              '    ownerProtocolVersion = OWNER_PROTOCOL_VERSION,\n    minimumCompatibleOwnerProtocolVersion = MIN_COMPATIBLE_OWNER_PROTOCOL_VERSION,\n    legacyMinimumCompatibleOwnerProtocolRC = LEGACY_MIN_COMPATIBLE_OWNER_PROTOCOL_RC,\n'
-          )
-
-          # 4) Direct regression files for the safety-critical modules identified by the audit.
-          Path('tests/test_mdt_adapter.lua').write_text(r'''local file = assert(io.open("Integrations/MDTAdapter.lua", "rb"))
-          local source = file:read("*a")
-          file:close()
-          assert(source:find('["6.2.2"] = true', 1, true), "MDT 6.2.2 must be source-verified")
-          assert(source:find('DungeonEnemies_AddOrRemoveBlipToCurrentPull', 1, true), "official MDT membership mutator must be hooked")
-          assert(source:find('function Adapter:ValidateExecutionFreshness(reason)', 1, true), "combat-entry freshness check is missing")
-          assert(source:find('route-watch-baseline-unavailable', 1, true), "missing baseline must fail closed")
-          assert(source:find('route-signature-changed', 1, true), "changed route must fail closed")
-          print("ok - MDT adapter mutation and freshness guards")
-          ''', encoding='utf-8')
-
-          Path('tests/test_runtime_controller.lua').write_text(r'''local file = assert(io.open("Runtime/RuntimeController.lua", "rb"))
-          local source = file:read("*a")
-          file:close()
-          assert(source:find('previousRouteMacroPlan', 1, true), "previous route macro plan reuse is missing")
-          assert(source:find('not routeChanged and not markerPlanChanged', 1, true), "unchanged plan signature gate is missing")
-          assert(source:find('Addon.RouteMacroPlan.Build(plan)', 1, true), "route macro plan rebuild path is missing")
-          assert(source:find('routeFingerprint', 1, true), "runtime route fingerprint contract is missing")
-          print("ok - runtime controller rebuild and route identity guards")
-          ''', encoding='utf-8')
-
-          Path('tests/test_marker_executor.lua').write_text(r'''local file = assert(io.open("Runtime/MarkerExecutor.lua", "rb"))
-          local source = file:read("*a")
-          file:close()
-          assert(source:find('local function validateRuntimeExecutionContext(runtimeState)', 1, true), "shared execution gate is missing")
-          assert(source:find('if executionInvalidated then return nil', 1, true), "invalidated execution must fail closed")
-          assert(source:find('local MAX_ROUTE_BATCHES = 3', 1, true), "maximum route batch invariant changed")
-          assert(source:find('if #result > BULK_MARKER_LIMIT then', 1, true), "per-batch marker cap is missing")
-          assert(source:find('function Executor:InvalidateExecution(reason)', 1, true), "execution invalidation entrypoint is missing")
-          print("ok - marker executor gates and capacity invariants")
-          ''', encoding='utf-8')
-
-          Path('tests/test_smart_macro_manager.lua').write_text(r'''local file = assert(io.open("Runtime/SmartMacroManager.lua", "rb"))
-          local source = file:read("*a")
-          file:close()
-          assert(source:find('function Manager:FailCloseRouteMacros(reason)', 1, true), "route macro fail-close path is missing")
-          assert(source:find('managed-execution-parking-unverified', 1, true), "parking verification is missing")
-          assert(source:find('if type(InCombatLockdown) == "function" and InCombatLockdown() then', 1, true), "combat write guard is missing")
-          assert(source:find('reserved-macro-name-conflict:', 1, true), "reserved-name conflict must fail closed")
-          print("ok - smart macro fail-close and combat-write guards")
-          ''', encoding='utf-8')
-
-          replace_once(
-              'tests/run.lua',
-              '  "tests/test_input_hardening.lua",\n',
-              '  "tests/test_input_hardening.lua",\n  "tests/test_mdt_adapter.lua",\n  "tests/test_runtime_controller.lua",\n  "tests/test_marker_executor.lua",\n  "tests/test_smart_macro_manager.lua",\n'
-          )
-
-          # Extend existing ownership regression to cover explicit stable protocol messages.
-          replace_once(
-              'tests/test_marker_ownership.lua',
-              'assert(source:find("peerOwnerProtocolCompatible(peer)", 1, true), "owner protocol compatibility gate is missing")\n',
-              'assert(source:find("peerOwnerProtocolCompatible(peer)", 1, true), "owner protocol compatibility gate is missing")\nassert(source:find("OWNER_PROTOCOL_VERSION = 1", 1, true), "owner protocol must be independent of release suffix")\nassert(source:find("ownerProtocolVersion = parsedProtocol", 1, true), "explicit peer protocol must be parsed")\nassert(source:find("LEGACY_MIN_COMPATIBLE_OWNER_PROTOCOL_RC", 1, true), "legacy rc52+ compatibility fallback is missing")\n'
-          )
-          PY
-
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq lua5.1
+          find . -type f -name '*.lua' -print0 | while IFS= read -r -d '' file; do
+            LUA_FILE="$file" lua5.1 -e 'local f,e=loadfile(os.getenv("LUA_FILE")); assert(f,e)'
+          done
+          while IFS= read -r entry; do
+            case "$entry" in ''|'##'*|'#'*) continue ;; esac
+            entry="${entry//\\//}"
+            test -f "$entry" || { echo "Missing TOC file: $entry" >&2; exit 1; }
+          done < MDTPullMarker.toc
           lua5.1 tests/run.lua
           git diff --check
-      - name: Commit verified fixes
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'Webactueel Audit Fixer'
-          git config user.email 'actions@users.noreply.github.com'
-          git add Integrations/MDTAdapter.lua Core/Events.lua Runtime/MarkerOwnership.lua tests
-          git diff --cached --check
-          git commit -m 'Fix audit safety and compatibility findings'
-          git push origin HEAD:agent/audit-fixes-20260816
