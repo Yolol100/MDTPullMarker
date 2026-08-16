@@ -1,0 +1,8 @@
+local file = assert(io.open("Runtime/SmartMacroManager.lua", "rb"))
+local source = file:read("*a")
+file:close()
+assert(source:find('function Manager:FailCloseRouteMacros(reason)', 1, true), "route macro fail-close path is missing")
+assert(source:find('managed-execution-parking-unverified', 1, true), "parking verification is missing")
+assert(source:find('if type(InCombatLockdown) == "function" and InCombatLockdown() then', 1, true), "combat write guard is missing")
+assert(source:find('reserved-macro-name-conflict:', 1, true), "reserved-name conflict must fail closed")
+print("ok - smart macro fail-close and combat-write guards")

@@ -96,6 +96,9 @@ local function handleEvent(_, event, ...)
   elseif event == "CHAT_MSG_ADDON" then
     Addon.MarkerOwnership:OnAddonMessage(...)
   elseif event == "PLAYER_REGEN_DISABLED" then
+    if Addon.MDT and type(Addon.MDT.ValidateExecutionFreshness) == "function" then
+      Addon.MDT:ValidateExecutionFreshness("combat-start")
+    end
     Addon.PullDeathTracker:OnCombatStarted()
     Addon.MarkerOwnership:OnCombatStarted()
   elseif SESSION_EVENTS[event] then

@@ -14,6 +14,7 @@ local VERIFIED_SOURCE_VERSIONS = {
   ["6.1.20"] = true,
   ["6.2.0-alpha5"] = true,
   ["6.2.1"] = true,
+  ["6.2.2"] = true,
 }
 
 local state = {
@@ -895,15 +896,28 @@ end
 
 local function installRouteMutationHooks()
   if routeMutationHooksInstalled then return true end
-  local mixin = _G.MDTDungeonEnemyMixin
-  if type(mixin) ~= "table" or type(hooksecurefunc) ~= "function" then return nil, "mdt-route-mutation-hook-unavailable" end
+  if type(hooksecurefunc) ~= "function" then return nil, "mdt-route-mutation-hook-unavailable" end
+
   local installed = 0
-  for _, methodName in ipairs({ "OnMouseDown", "OnClick", "OnDragStart", "OnDragStop" }) do
-    if type(mixin[methodName]) == "function" then
-      local ok = pcall(hooksecurefunc, mixin, methodName, function() onPotentialRouteMutation(nil, "mdt-route-interaction:"..methodName) end)
-      if ok then installed = installed + 1 end
-    end
+  local function install(target, methodName, reasonPrefix)
+    if type(target) ~= "table" or type(target[methodName]) ~= "function" then return end
+    local ok = pcall(hooksecurefunc, target, methodName, function()
+      onPotentialRouteMutation(nil, tostring(reasonPrefix)..tostring(methodName))
+    end)
+    if ok then installed = installed + 1 end
   end
+
+  -- MDT 6.2.2 mutates enemy membership through the public MDT method during
+  -- both click and drag-preview flows. Hook the mutator itself so drag scripts
+  -- do not depend on mixin method names that are installed via SetScript.
+  local mixin = _G.MDTDungeonEnemyMixin
+  install(mixin, "OnClick", "mdt-route-interaction:")
+  install(mixin, "SetUp", "mdt-enemy-setup:")
+
+  local mdt = type(_G.MDT) == "table" and _G.MDT or nil
+  install(mdt, "DungeonEnemies_AddOrRemoveBlipToCurrentPull", "mdt-route-mutator:")
+  install(mdt, "PresetsAddPull", "mdt-route-mutator:")
+
   if installed == 0 then return nil, "mdt-route-mutation-methods-unavailable" end
   routeMutationHooksInstalled = true
   return true
@@ -940,6 +954,30 @@ end
 local function ensureRouteWatch()
   if routeWatchTicker or type(C_Timer) ~= "table" or type(C_Timer.NewTicker) ~= "function" then return end
   routeWatchTicker = C_Timer.NewTicker(0.25, runRouteWatchTick)
+end
+
+function Adapter:ValidateExecutionFreshness(reason)
+  -- Last synchronous fail-closed check at combat entry. Official MDT mutation
+  -- paths are hooked out of combat; this additionally catches direct/programmatic
+  -- DB edits that occurred between route-watch ticks. Reading the route is safe
+  -- in combat even though protected macro writes are not.
+  local signature, signatureError = lightweightRouteSignature()
+  if not signature then
+    invalidateExecution((reason or "execution-freshness")..":route-data-unavailable")
+    routeMutationObservedInCombat = true
+    return false, signatureError or "route-data-unavailable"
+  end
+  if not routeWatchSignature then
+    invalidateExecution((reason or "execution-freshness")..":baseline-unavailable")
+    routeMutationObservedInCombat = true
+    return false, "route-watch-baseline-unavailable"
+  end
+  if routeWatchSignature ~= signature then
+    invalidateExecution((reason or "execution-freshness")..":route-changed")
+    routeMutationObservedInCombat = true
+    return false, "route-signature-changed"
+  end
+  return true, signature
 end
 
 local function registerUIInitializer(api)

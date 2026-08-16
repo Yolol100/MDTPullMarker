@@ -1,0 +1,8 @@
+local file = assert(io.open("Runtime/RuntimeController.lua", "rb"))
+local source = file:read("*a")
+file:close()
+assert(source:find('previousRouteMacroPlan', 1, true), "previous route macro plan reuse is missing")
+assert(source:find('not routeChanged and not markerPlanChanged', 1, true), "unchanged plan signature gate is missing")
+assert(source:find('Addon.RouteMacroPlan.Build(plan)', 1, true), "route macro plan rebuild path is missing")
+assert(source:find('routeFingerprint', 1, true), "runtime route fingerprint contract is missing")
+print("ok - runtime controller rebuild and route identity guards")

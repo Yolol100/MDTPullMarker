@@ -7,7 +7,9 @@ local PREFIX = "MDTPM_OWNER"
 local PEER_TTL_SECONDS = 18
 local HEARTBEAT_SECONDS = 5
 local SETTLE_SECONDS = 0.8
-local MIN_COMPATIBLE_OWNER_PROTOCOL_RC = 52
+local OWNER_PROTOCOL_VERSION = 1
+local MIN_COMPATIBLE_OWNER_PROTOCOL_VERSION = 1
+local LEGACY_MIN_COMPATIBLE_OWNER_PROTOCOL_RC = 52
 
 local state = {
   initialized = false,
@@ -188,14 +190,23 @@ local function peerReleaseCandidate(peer)
   return tonumber(version:match("%-rc(%d+)$"))
 end
 
+local function peerOwnerProtocolVersion(peer)
+  local explicit = peer and tonumber(peer.ownerProtocolVersion)
+  if explicit and explicit >= 1 and explicit % 1 == 0 then return explicit end
+  local rc = peerReleaseCandidate(peer)
+  if rc and rc >= LEGACY_MIN_COMPATIBLE_OWNER_PROTOCOL_RC then return 1 end
+  return nil
+end
+
 local function peerUsesHeartbeat(peer)
+  if peerOwnerProtocolVersion(peer) then return true end
   local rc = peerReleaseCandidate(peer)
   return rc and rc >= 41 or false
 end
 
 local function peerOwnerProtocolCompatible(peer)
-  local rc = peerReleaseCandidate(peer)
-  return rc and rc >= MIN_COMPATIBLE_OWNER_PROTOCOL_RC or false
+  local protocol = peerOwnerProtocolVersion(peer)
+  return protocol and protocol >= MIN_COMPATIBLE_OWNER_PROTOCOL_VERSION or false
 end
 
 local function incompatibleOwnerPeer()
@@ -336,7 +347,7 @@ local function send(kind)
   local channel = distribution()
   if not channel then return failCommunication("comm-channel-unavailable") end
   state.localEligible = currentEligibility()
-  local payload = table.concat({ tostring(kind or "H"), tostring(Addon.Version or "unknown"), state.localEligible and "1" or "0" }, "|")
+  local payload = table.concat({ tostring(kind or "H"), tostring(Addon.Version or "unknown"), state.localEligible and "1" or "0", tostring(OWNER_PROTOCOL_VERSION) }, "|")
   local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, payload, channel)
   if not ok or not addonMessageCallSucceeded(result) then
     return failCommunication("comm-send-failed")
@@ -462,11 +473,18 @@ function Ownership:OnAddonMessage(prefix, message, channel, sender)
   sender = normalizeFullName(safeString(sender, 180))
   local senderKey = canonical(sender)
   if not senderKey or senderKey == canonical(state.localName) then return false end
-  local kind, version, eligible = tostring(message or ""):match("^([^|]+)|([^|]*)|([01])$")
+  local rawMessage = tostring(message or "")
+  local kind, version, eligible, ownerProtocol = rawMessage:match("^([^|]+)|([^|]*)|([01])|(%d+)$")
+  if not kind then
+    kind, version, eligible = rawMessage:match("^([^|]+)|([^|]*)|([01])$")
+  end
   if kind ~= "H" and kind ~= "R" and kind ~= "B" then return false end
+  local parsedProtocol = tonumber(ownerProtocol)
+  if parsedProtocol and (parsedProtocol < 1 or parsedProtocol > 255 or parsedProtocol % 1 ~= 0) then return false end
   state.peers[senderKey] = {
     name = sender,
     version = safeString(version, 40),
+    ownerProtocolVersion = parsedProtocol,
     eligible = eligible == "1",
     lastSeen = now(),
     channel = channel,
@@ -549,7 +567,9 @@ function Ownership:GetState()
     peerCount = peerCount,
     legacyPeerCount = legacyPeerCount,
     incompatiblePeerCount = incompatiblePeerCount,
-    minimumCompatibleOwnerProtocolRC = MIN_COMPATIBLE_OWNER_PROTOCOL_RC,
+    ownerProtocolVersion = OWNER_PROTOCOL_VERSION,
+    minimumCompatibleOwnerProtocolVersion = MIN_COMPATIBLE_OWNER_PROTOCOL_VERSION,
+    legacyMinimumCompatibleOwnerProtocolRC = LEGACY_MIN_COMPATIBLE_OWNER_PROTOCOL_RC,
     combatFrozen = state.combatFrozen,
     heartbeatSeconds = HEARTBEAT_SECONDS,
     peerTTLSeconds = PEER_TTL_SECONDS,
