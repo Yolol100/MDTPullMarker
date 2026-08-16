@@ -46,19 +46,24 @@ local function liveDungeonActive()
   return false
 end
 local function markerOwnerAllowsExecution() local owner, reason, ownerName = Addon.MarkerOwnership:IsOwner() if owner then return true, reason, ownerName end return false, reason or "marker-owner-passive", ownerName end
-local function setResult(status, code, marker, source) lastResult = { status = tostring(status or "unknown"), code = code and tostring(code) or nil, marker = tonumber(marker), source = source and tostring(source) or nil, at = monotonicTime() } end
-local function refreshRuntimeFrameIfOpen() if Addon.RuntimeFrame:IsOpen() then Addon.RuntimeFrame:Refresh() end end
-local sanitizeTargetName = MarkerMacro.SanitizeTargetName
-
-local function getRuntimeInstructionIdentity()
+local function validateRuntimeExecutionContext(runtimeState)
   if executionInvalidated then return nil, executionInvalidationReason or "execution-invalidated" end
-  local runtimeState = Addon.RuntimeController:GetState(); if not runtimeState or runtimeState.planStatus == "blocked" then return nil, "plan-blocked" end
+  if not runtimeState or runtimeState.planStatus == "blocked" then return nil, "plan-blocked" end
   local session = Addon.DungeonSession:GetState(); if not session then return nil, "dungeon-session-unavailable" end
   if session.challengeCompleted then return nil, "challenge-completed" end
   if not liveDungeonActive() or not session.active then return nil, "outside-dungeon" end
   if session.routeMatches == false then return nil, "route-instance-mismatch" end
   if session.routeMatches ~= true then return nil, "route-instance-unverified" end
   local ownerAllowed, ownerError = markerOwnerAllowsExecution(); if not ownerAllowed then return nil, ownerError end
+  return session
+end
+local function setResult(status, code, marker, source) lastResult = { status = tostring(status or "unknown"), code = code and tostring(code) or nil, marker = tonumber(marker), source = source and tostring(source) or nil, at = monotonicTime() } end
+local function refreshRuntimeFrameIfOpen() if Addon.RuntimeFrame:IsOpen() then Addon.RuntimeFrame:Refresh() end end
+local sanitizeTargetName = MarkerMacro.SanitizeTargetName
+
+local function getRuntimeInstructionIdentity()
+  local runtimeState = Addon.RuntimeController:GetState()
+  local session, contextError = validateRuntimeExecutionContext(runtimeState); if not session then return nil, contextError end
   if runtimeState.completed then return nil, "pull-completed" end
   if runtimeState.allAssignmentsConfirmed then return nil, "pull-markers-complete" end
   if runtimeState.assignmentConfirmed then return nil, "instruction-already-confirmed" end
@@ -72,15 +77,10 @@ local BULK_MARKER_LIMIT = MarkerMacro.BULK_MARKER_LIMIT
 local MAX_ROUTE_BATCHES = 3
 local parseBulkToken = MarkerMacro.ParseBulkToken
 local function getRuntimeBulkIdentities(batchIndex)
-  if executionInvalidated then return nil, executionInvalidationReason or "execution-invalidated" end
   batchIndex = tonumber(batchIndex) or 1; if batchIndex < 1 or batchIndex > MAX_ROUTE_BATCHES then return nil, "bulk-batch-invalid" end
   if not Addon.RuntimeController or type(Addon.RuntimeController.GetState) ~= "function" or type(Addon.RuntimeController.GetOrderedAssignments) ~= "function" then return nil, "runtime-unavailable" end
-  local runtimeState = Addon.RuntimeController:GetState(); if not runtimeState or runtimeState.planStatus == "blocked" then return nil, "plan-blocked" end
-  local session = Addon.DungeonSession:GetState(); if not session then return nil, "dungeon-session-unavailable" end
-  if session.challengeCompleted then return nil, "challenge-completed" end
-  if not liveDungeonActive() or not session.active then return nil, "outside-dungeon" end
-  if session.routeMatches == false then return nil, "route-instance-mismatch" end; if session.routeMatches ~= true then return nil, "route-instance-unverified" end
-  local ownerAllowed, ownerError = markerOwnerAllowsExecution(); if not ownerAllowed then return nil, ownerError end
+  local runtimeState = Addon.RuntimeController:GetState()
+  local session, contextError = validateRuntimeExecutionContext(runtimeState); if not session then return nil, contextError end
   if runtimeState.completed then return nil, "pull-completed" end
   if runtimeState.automaticTargeting == false or runtimeState.pullStatus == "manual-required" then return nil, "same-name-automatic-targeting-unavailable" end
   local result = {}

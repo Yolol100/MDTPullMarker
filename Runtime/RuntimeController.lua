@@ -146,6 +146,7 @@ function Controller:Refresh(reason, useCurrentSnapshot)
   local nextPlanSignature = buildPlanSignature(plan)
   local routeChanged = state.activeFingerprint and state.activeFingerprint ~= plan.routeFingerprint
   local markerPlanChanged = state.activePlanSignature and state.activePlanSignature ~= nextPlanSignature
+  local previousRouteMacroPlan = state.routeMacroPlan
   if routeChanged or markerPlanChanged then
     state.completedPulls, state.skippedPulls, state.engagedPulls = {}, {}, {}
     state.confirmedAssignments, state.submittedAssignments = {}, {}
@@ -160,8 +161,12 @@ function Controller:Refresh(reason, useCurrentSnapshot)
   state.routeMacroPlan = nil
   state.lastRouteMacroError = nil
   if plan.status ~= "blocked" and Addon.RouteMacroPlan and type(Addon.RouteMacroPlan.Build) == "function" then
-    local routeMacroPlan, routeMacroError = Addon.RouteMacroPlan.Build(plan)
-    state.routeMacroPlan, state.lastRouteMacroError = routeMacroPlan, routeMacroError
+    if not routeChanged and not markerPlanChanged and previousRouteMacroPlan then
+      state.routeMacroPlan = previousRouteMacroPlan
+    else
+      local routeMacroPlan, routeMacroError = Addon.RouteMacroPlan.Build(plan)
+      state.routeMacroPlan, state.lastRouteMacroError = routeMacroPlan, routeMacroError
+    end
   elseif plan.status == "blocked" then state.lastRouteMacroError = "marker-plan-blocked"
   else state.lastRouteMacroError = "route-macro-planner-unavailable" end
 

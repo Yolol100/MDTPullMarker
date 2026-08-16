@@ -80,9 +80,9 @@ local function refreshView(view, model)
   local bound = model.routeBinding ~= nil; local routeMacros = model.routeMacros or {}; local problem = bound and routeMacros.conflictCount and routeMacros.conflictCount > 0 and "Route macro name conflict" or (model.dungeonActive and (macroProblem(model.macro1) or macroProblem(model.macro2)) or nil)
   if bound and problem then view.macro:SetText("|cffff5959"..problem.."|r")
   elseif bound and routeMacros.desiredCount == 0 then view.macro:SetText("|cffffad33Bound route has no automatic marker macros|r")
-  elseif bound and routeMacros.current and routeMacros.executionActive == false then view.macro:SetText(("|cffb8b8b8Route macros prepared and safely parked: %d/%d|r"):format(routeMacros.currentCount or 0, routeMacros.desiredCount or 0))
+  elseif bound and routeMacros.current and routeMacros.executionActive == false then view.macro:SetText(("|cffb8b8b8Route macros ready but inactive: %d/%d|r"):format(routeMacros.currentCount or 0, routeMacros.desiredCount or 0))
   elseif bound and routeMacros.current then view.macro:SetText(("|cff59df80Route macros active: %d/%d|r"):format(routeMacros.currentCount or 0, routeMacros.desiredCount or 0))
-  elseif bound and model.combat then view.macro:SetText("|cffffad33Route macro repair waits until combat ends|r")
+  elseif bound and model.combat then view.macro:SetText("|cffffad33Route macros update after combat|r")
   elseif bound then view.macro:SetText(("|cffffad33Preparing route macros: %d/%d|r"):format(routeMacros.currentCount or 0, routeMacros.desiredCount or 0))
   elseif not model.dungeonActive then view.macro:SetText(("|cffb8b8b8"..(L.WAITING_FOR_DUNGEON or "Waiting for dungeon").."|r"))
   elseif problem then view.macro:SetText("|cffff5959"..problem.."|r")
@@ -90,9 +90,9 @@ local function refreshView(view, model)
   elseif model.macro1.current and model.macro2.current then view.macro:SetText("|cff59df80Macros ready: MDTPM1 + MDTPM2|r")
   elseif model.combat then view.macro:SetText(("|cffffad33"..(L.MACROS_UPDATE_AFTER_COMBAT or "Macros update after combat").."|r")) else view.macro:SetText(("|cffffad33"..(L.PREPARING_MACROS or "Preparing macros...").."|r")) end
 
-  if not bound then view.guide:SetText("Select the route you want in MDT, then click Bind selected route. Legacy mode still activates automatically in a dungeon.")
-  elseif model.planStatus == "blocked" then view.guide:SetText("|cffff5959This pull cannot be built safely. Check /mpm doctor.|r")
-  elseif model.planStatus == "unavailable" then view.guide:SetText("|cffff5959Marker plan is not ready. Check /mpm doctor.|r")
+  if not bound then view.guide:SetText("Select the route you want in MDT, then click Bind route. Legacy mode still activates automatically in a dungeon.")
+  elseif model.planStatus == "blocked" then view.guide:SetText("|cffff5959This pull can’t be marked automatically. Run /mpm doctor for details.|r")
+  elseif model.planStatus == "unavailable" then view.guide:SetText("|cffff5959Marker plan isn’t ready. Run /mpm doctor for details.|r")
   else
     if bound then
       local pullIndex = model.runtime and model.runtime.currentPullIndex; local a = pullIndex and Addon.RuntimeController:GetRouteMacroDescriptor(pullIndex, 1) or nil; local b = pullIndex and Addon.RuntimeController:GetRouteMacroDescriptor(pullIndex, 2) or nil; local c = pullIndex and Addon.RuntimeController:GetRouteMacroDescriptor(pullIndex, 3) or nil
@@ -108,7 +108,7 @@ local function refreshView(view, model)
   end
   if bound or model.dungeonActive then view.pick1:Show(); view.pick2:Show() else view.pick1:Hide(); view.pick2:Hide() end
   if bound then view.pick3:Show() else view.pick3:Hide() end
-  view.pick1:SetText(bound and "Pick current A" or "Pick up MDTPM1"); view.pick2:SetText(bound and "Pick current B" or "Pick up MDTPM2"); view.pick3:SetText("Pick current C")
+  view.pick1:SetText(bound and "Pick up A macro" or "Pick up marker macro 1"); view.pick2:SetText(bound and "Pick up B macro" or "Pick up marker macro 2"); view.pick3:SetText("Pick up C macro")
   view.pick1:SetEnabled((bound or model.dungeonActive) and not model.combat); view.pick2:SetEnabled((bound or model.dungeonActive) and not model.combat); view.pick3:SetEnabled(bound and not model.combat); view.bind:SetEnabled(not model.combat); view.unbind:SetEnabled(bound and not model.combat)
   view.error:SetText(state.lastError and ("|cffffad33"..state.lastError.."|r") or "")
 end
@@ -119,12 +119,12 @@ local function createEditor(parent)
   local route = makeText(root, "GameFontHighlight"); route:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -16); route:SetPoint("RIGHT", -20, 0); route:SetJustifyH("LEFT")
   local macro = makeText(root, "GameFontHighlight"); macro:SetPoint("TOPLEFT", route, "BOTTOMLEFT", 0, -10); macro:SetPoint("RIGHT", -20, 0); macro:SetJustifyH("LEFT")
   local guide = makeText(root, "GameFontNormal"); guide:SetPoint("TOPLEFT", macro, "BOTTOMLEFT", 0, -22); guide:SetPoint("RIGHT", -20, 0); guide:SetJustifyH("LEFT")
-  local openMap = makeButton(root, "Open MDT markers", 145, function() local opened = Addon.MDTIntegration and Addon.MDTIntegration:OpenMap() if not opened then state.lastError = "Could not open the MDT map." UI:Refresh() end end); openMap:SetPoint("TOPLEFT", guide, "BOTTOMLEFT", 0, -20)
-  local bind = makeButton(root, "Bind selected route", 150, bindSelectedRoute); bind:SetPoint("LEFT", openMap, "RIGHT", 8, 0)
+  local openMap = makeButton(root, "Open MDT map", 145, function() local opened = Addon.MDTIntegration and Addon.MDTIntegration:OpenMap() if not opened then state.lastError = "Could not open the MDT map." UI:Refresh() end end); openMap:SetPoint("TOPLEFT", guide, "BOTTOMLEFT", 0, -20)
+  local bind = makeButton(root, "Bind route", 150, bindSelectedRoute); bind:SetPoint("LEFT", openMap, "RIGHT", 8, 0)
   local unbind = makeButton(root, "Unbind route", 110, unbindSelectedRoute); unbind:SetPoint("LEFT", bind, "RIGHT", 8, 0)
-  local pick1 = makeButton(root, "Pick up MDTPM1", 140, function() pickupMacro(1) end); pick1:SetPoint("TOPLEFT", openMap, "BOTTOMLEFT", 0, -10)
-  local pick2 = makeButton(root, "Pick up MDTPM2", 140, function() pickupMacro(2) end); pick2:SetPoint("LEFT", pick1, "RIGHT", 8, 0)
-  local pick3 = makeButton(root, "Pick current C", 140, function() pickupMacro(3) end); pick3:SetPoint("LEFT", pick2, "RIGHT", 8, 0); pick3:Hide()
+  local pick1 = makeButton(root, "Pick up marker macro 1", 140, function() pickupMacro(1) end); pick1:SetPoint("TOPLEFT", openMap, "BOTTOMLEFT", 0, -10)
+  local pick2 = makeButton(root, "Pick up marker macro 2", 140, function() pickupMacro(2) end); pick2:SetPoint("LEFT", pick1, "RIGHT", 8, 0)
+  local pick3 = makeButton(root, "Pick up C macro", 140, function() pickupMacro(3) end); pick3:SetPoint("LEFT", pick2, "RIGHT", 8, 0); pick3:Hide()
   local errorText = makeText(root, "GameFontHighlightSmall"); errorText:SetPoint("TOPLEFT", pick1, "BOTTOMLEFT", 0, -14); errorText:SetPoint("RIGHT", -20, 0); errorText:SetJustifyH("LEFT")
   local view = { root = root, route = route, macro = macro, guide = guide, bind = bind, unbind = unbind, pick1 = pick1, pick2 = pick2, pick3 = pick3, error = errorText }
   state.views[#state.views + 1] = view; return view
