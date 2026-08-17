@@ -18,7 +18,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/audit_repository.py
+          python3 -m py_compile scripts/audit_repository.py scripts/build_release.py
           python3 scripts/audit_repository.py
           git diff --check
       - name: Compile Lua files
@@ -56,3 +56,12 @@ jobs:
           grep -Fq 'Runtime\RuntimeController.lua' MDTPullMarker.toc
           grep -Fq 'Integrations\MDTIntegration.lua' MDTPullMarker.toc
           grep -Fq 'UI\ConfigurationUI.lua' MDTPullMarker.toc
+      - name: Verify deterministic CurseForge package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/a dist/b
+          python3 scripts/build_release.py dist/a/MDTPullMarker.zip > dist/a/SHA256SUMS.txt
+          python3 scripts/build_release.py dist/b/MDTPullMarker.zip > dist/b/SHA256SUMS.txt
+          cmp -s dist/a/MDTPullMarker.zip dist/b/MDTPullMarker.zip
+          test "$(sha256sum dist/a/MDTPullMarker.zip | cut -d' ' -f1)" = "$(cut -d' ' -f1 dist/a/SHA256SUMS.txt)"
