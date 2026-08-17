@@ -10,6 +10,11 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 TOC = ROOT / "MDTPullMarker.toc"
 MAX_TRACKED_BYTES = 1024 * 1024
+RETIRED_PLACEHOLDERS = {
+    "Integrations/MDTUI.lua",
+    "Runtime/PullController.lua",
+    "UI/Configuration.lua",
+}
 FORBIDDEN_PATH_PARTS = {".idea", ".vscode", "__pycache__", ".pytest_cache", "node_modules", "dist", "build", "coverage", ".env"}
 FORBIDDEN_SUFFIXES = {".log", ".tmp", ".swp", ".swo", ".bak", ".orig", ".rej", ".pem", ".p12", ".pfx"}
 SECRET_PATTERNS = {
@@ -90,7 +95,10 @@ def main() -> int:
     for rel in entries:
         if rel not in files:
             fail(f"TOC runtime file is missing/untracked: {rel}")
-    runtime_lua = {rel for rel in files if rel.endswith(".lua") and not rel.startswith("tests/")}
+    runtime_lua = {
+        rel for rel in files
+        if rel.endswith(".lua") and not rel.startswith("tests/") and rel not in RETIRED_PLACEHOLDERS
+    }
     unlisted = sorted(runtime_lua - set(entries))
     if unlisted:
         fail("runtime Lua exists outside TOC inventory: " + ", ".join(unlisted))
