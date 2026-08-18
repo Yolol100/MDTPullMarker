@@ -4,13 +4,20 @@
 
 ## Unreleased
 
+- No changes yet.
+
+## 1.0.0-rc59 — Midnight Season 2 readiness
+
 - Replaced the restricted Midnight `COMBAT_LOG_EVENT_UNFILTERED` registration with the supported `UNIT_DIED` event and retained fail-closed handling for secret unit GUIDs.
 - Restricted grouped marker-owner candidates to eligible clients that actually announced a compatible owner protocol, so a tank or leader without MDT Pull Marker cannot suppress execution.
 - Freeze the settled marker owner for the complete active Mythic+ challenge and suppress ownership heartbeats/re-election while Midnight addon messaging is locked down.
 - Fail closed if the frozen challenge owner is positively proven to have left the group; unknown/secret roster reads preserve the freeze instead of risking split-brain.
 - Added deterministic coverage for challenge start during the short ownership settle window; an unsettled election remains passive for that challenge instead of freezing a provisional owner.
+- Kept automatic bulk marker application at Blizzard's Season 2 limit of three target-marker operations per macro activation and added an explicit boundary regression.
+- Reviewed the adapter against upstream Mythic Dungeon Tools 6.2.4; Season 2 enemy-force corrections remain owned by MDT instead of being duplicated in this add-on.
 - Added focused Lua 5.1 regression coverage for the event inventory, readable/restricted unit-death evidence, grouped ownership election and Midnight challenge-lockdown behavior.
 - Added `SECURITY.md` and `CODEOWNERS` repository maintenance metadata.
+- Bumped runtime/package identity to `1.0.0-rc59`.
 
 ## 1.0.0-rc58 — pre-combat route safety and repository cleanup
 
@@ -22,7 +29,7 @@
 - Expanded route mutation watching across bound and legacy/current-route mode and fail closed when previously readable route data disappears.
 - Bounded persisted diagnostics, closed schema-12 normalization to an allowlist, sanitized migration backups, blocked future-schema execution, and required an explicit positive death verdict for automatic pull completion.
 - The rc58 repository gate compiled all Lua with Lua 5.1 and verified every active TOC path; current repository assurance has since expanded as described in the evidence note above.
-- Bumped runtime/package identity to `1.0.0-rc58`.
+- Bumped runtime, TOC and documentation identity to `1.0.0-rc58`.
 
 ## 1.0.0-rc56 — MAP safety, architecture and verification hardening
 
