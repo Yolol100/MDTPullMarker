@@ -70,7 +70,7 @@ jobs:
         with:
           subject-path: dist/*
 
-      - name: Publish GitHub Release
+      - name: Create draft GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,7 +78,7 @@ jobs:
           set -euo pipefail
           VERSION="$(sed -n 's/^## Version:[[:space:]]*//p' MDTPullMarker.toc | head -n1 | tr -d '\r')"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME already exists; refusing to mutate a published release." >&2
+            echo "Release $GITHUB_REF_NAME already exists; refusing to mutate its release assets." >&2
             exit 1
           fi
           args=(
@@ -94,4 +94,4 @@ jobs:
             args+=(--prerelease)
           fi
           "${args[@]}"
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          echo 'Draft release created. Publish only after the documented live Retail acceptance gate passes.'
