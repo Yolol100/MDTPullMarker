@@ -1,12 +1,16 @@
 # Changelog
 
-> Repository evidence note: the current public rc58 tree contains the runtime source and the checked-in GitHub validation workflow. Historical entries can describe verification assets from earlier development states; assets that are not present in the current tree are not treated as current release evidence. The current automated gate is Lua 5.1 compilation, focused regression tests and TOC inventory validation.
+> Repository evidence note: the current public tree contains the runtime source, focused Lua regression suite, repository/package audit scripts and checked-in GitHub validation workflows. Historical entries can describe verification assets from earlier development states; only assets that are present in the current tree are treated as current release evidence. The current automated gate compiles Lua 5.1, runs focused regressions, audits the repository/TOC inventory and verifies deterministic packaging.
 
 ## Unreleased
 
 - Replaced the restricted Midnight `COMBAT_LOG_EVENT_UNFILTERED` registration with the supported `UNIT_DIED` event and retained fail-closed handling for secret unit GUIDs.
 - Restricted grouped marker-owner candidates to eligible clients that actually announced a compatible owner protocol, so a tank or leader without MDT Pull Marker cannot suppress execution.
-- Added focused Lua 5.1 regression coverage for the event inventory, readable/restricted unit-death evidence and grouped ownership election.
+- Freeze the settled marker owner for the complete active Mythic+ challenge and suppress ownership heartbeats/re-election while Midnight addon messaging is locked down.
+- Fail closed if the frozen challenge owner is positively proven to have left the group; unknown/secret roster reads preserve the freeze instead of risking split-brain.
+- Added deterministic coverage for challenge start during the short ownership settle window; an unsettled election remains passive for that challenge instead of freezing a provisional owner.
+- Added focused Lua 5.1 regression coverage for the event inventory, readable/restricted unit-death evidence, grouped ownership election and Midnight challenge-lockdown behavior.
+- Added `SECURITY.md` and `CODEOWNERS` repository maintenance metadata.
 
 ## 1.0.0-rc58 — pre-combat route safety and repository cleanup
 
@@ -17,8 +21,7 @@
 - Added a localization boundary with `Locale/enUS.lua` for normal user-facing UI, binding and tooltip strings.
 - Expanded route mutation watching across bound and legacy/current-route mode and fail closed when previously readable route data disappears.
 - Bounded persisted diagnostics, closed schema-12 normalization to an allowlist, sanitized migration backups, blocked future-schema execution, and required an explicit positive death verdict for automatic pull completion.
-- The current repository gate compiles all Lua with Lua 5.1 and verifies every active TOC path.
-- The current public tree does not include the previously documented regression/property/mutation suites, LuaCATS/type workspace, packaging scripts or assurance-document directories; those absent assets are not claimed as current release evidence.
+- The rc58 repository gate compiled all Lua with Lua 5.1 and verified every active TOC path; current repository assurance has since expanded as described in the evidence note above.
 - Bumped runtime/package identity to `1.0.0-rc58`.
 
 ## 1.0.0-rc56 — MAP safety, architecture and verification hardening
@@ -32,7 +35,7 @@
 - Added synchronous dungeon/session invalidation before ownership refresh on world transitions.
 - Added `DataUtils.ValidatedString` and switched persisted route identifiers to reject overlength values instead of silently truncating identity.
 - Renamed `Runtime/PullController.lua` → `Runtime/RuntimeController.lua`, `UI/Configuration.lua` → `UI/ConfigurationUI.lua`, and `Integrations/MDTUI.lua` → `Integrations/MDTIntegration.lua` so file names match public module names.
-- Historical rc56 development included additional static/test/package assurance work; see the repository evidence note above when interpreting assets that are not present in the current rc58 tree.
+- Historical rc56 development included additional static/test/package assurance work; see the repository evidence note above when interpreting those historical claims against the current tree.
 - Bumped runtime, TOC and documentation identity to rc56.
 
 ## 1.0.0-rc55 — communication recovery + current combat-log reader
