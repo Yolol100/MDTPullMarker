@@ -1,12 +1,20 @@
 local clock = 100.0
 local sent = {}
 local instructionChanges = {}
+local challengeMapID = nil
+local tankPresent = true
+local chatLockdown = false
 
 local Addon = {
   Version = "test-rc52",
   DungeonSession = {
     GetState = function()
-      return { active = true, routeMatches = true }
+      return {
+        active = true,
+        routeMatches = true,
+        isMythicPlus = challengeMapID ~= nil,
+        challengeCompleted = false,
+      }
     end,
   },
   RuntimeController = {
@@ -36,7 +44,7 @@ end
 
 function UnitFullName(unit)
   if unit == "player" then return "Player", "Realm" end
-  if unit == "party1" then return "Tank", "Realm" end
+  if unit == "party1" and tankPresent then return "Tank", "Realm" end
   return nil, nil
 end
 
@@ -45,11 +53,11 @@ function UnitIsDeadOrGhost(_unit)
 end
 
 function IsInGroup()
-  return true
+  return tankPresent
 end
 
 function GetNumGroupMembers()
-  return 2
+  return tankPresent and 2 or 1
 end
 
 function IsInRaid()
@@ -65,7 +73,16 @@ function UnitGroupRolesAssigned(unit)
   return "DAMAGER"
 end
 
+C_ChallengeMode = {
+  GetActiveChallengeMapID = function()
+    return challengeMapID
+  end,
+}
+
 C_ChatInfo = {
+  InChatMessagingLockdown = function()
+    return chatLockdown
+  end,
   IsAddonMessagePrefixRegistered = function(_prefix)
     return true
   end,
@@ -73,6 +90,7 @@ C_ChatInfo = {
     return true
   end,
   SendAddonMessage = function(prefix, payload, channel)
+    if chatLockdown then error("SendAddonMessage blocked during Midnight challenge") end
     sent[#sent + 1] = { prefix = prefix, payload = payload, channel = channel }
     return true
   end,
@@ -119,32 +137,51 @@ assert(state.owner == "Tank-Realm", "eligible tank must outrank local DPS")
 assert(state.incompatiblePeerCount == 0, "compatible peer must leave incompatible count")
 assert(state.ownerProtocolVersion == 1, "local owner protocol must remain version 1")
 
--- Let the initial settle window expire, then freeze the settled tank owner.
+-- Once the keystone starts, freeze the settled owner for the full challenge.
+-- Midnight suspends addon/chat messaging here, so no heartbeat or combat event
+-- may attempt SendAddonMessage or discard the pre-key election.
 clock = 101.0
+local sendsBeforeChallenge = #sent
+challengeMapID = 503
+chatLockdown = true
+ownership:RefreshEligibility("challenge-started")
+state = ownership:GetState()
+assert(state.challengeFrozen == true, "active challenge must freeze ownership")
+assert(state.owner == "Tank-Realm", "challenge must preserve the settled tank owner")
+assert(state.electionPending == false, "challenge freeze must suppress election state")
+assert(#sent == sendsBeforeChallenge, "challenge start must not send addon messages")
+
 local combatOwner = ownership:OnCombatStarted()
-assert(combatOwner == "Tank-Realm", "combat must snapshot the settled owner")
-state = ownership:GetState()
-assert(state.combatFrozen == true, "combat must freeze ownership")
-
--- A live eligibility update during combat may change the underlying election,
--- but effective ownership must remain frozen until combat ends.
-accepted = ownership:OnAddonMessage(
-  "MDTPM_OWNER",
-  "H|1.0|0|1",
-  "PARTY",
-  "Tank-Realm"
-)
-assert(accepted == true, "peer eligibility update should be accepted")
-state = ownership:GetState()
-assert(state.owner == "Tank-Realm", "effective owner must remain frozen during combat")
-assert(state.combatFrozen == true, "combat freeze must survive peer updates")
-
+assert(combatOwner == "Tank-Realm", "combat must use the challenge-frozen owner")
 ownership:OnCombatEnded()
+ownership:OnGroupChanged("GROUP_ROSTER_UPDATE")
 state = ownership:GetState()
-assert(state.combatFrozen == false, "combat end must release owner freeze")
-assert(state.owner == "Player-Realm", "post-combat election must use current eligibility")
+assert(state.owner == "Tank-Realm", "combat/group events must not re-elect during the challenge")
+assert(#sent == sendsBeforeChallenge, "challenge lifecycle must remain message-free")
 
-assert(#sent > 0, "ownership initialization should exercise addon-message transport")
+local isOwner, reason, owner = ownership:IsOwner()
+assert(isOwner == false and reason == "marker-owner-passive", "non-owner must remain passive during challenge")
+assert(owner == "Tank-Realm", "passive result must expose the frozen owner")
+
+-- If the frozen owner positively leaves the roster, fail closed. Do not elect a
+-- replacement while addon communication is unavailable, because two clients
+-- could otherwise independently take ownership.
+tankPresent = false
+ownership:OnGroupChanged("GROUP_ROSTER_UPDATE")
+state = ownership:GetState()
+assert(state.owner == nil, "owner departure during challenge must fail closed")
+assert(state.ownerReason == "challenge-owner-left", "owner departure must be diagnosed")
+assert(#sent == sendsBeforeChallenge, "owner departure must not trigger in-key election traffic")
+
+-- After the challenge ends, normal election/communication semantics resume.
+challengeMapID = nil
+chatLockdown = false
+ownership:OnWorldChanged("challenge-ended")
+state = ownership:GetState()
+assert(state.challengeFrozen == false, "challenge end must release challenge freeze")
+assert(state.owner == "Player-Realm", "solo post-challenge state should elect the local player")
+
+assert(#sent > 0, "pre-challenge ownership initialization should exercise addon-message transport")
 assert(#instructionChanges > 0, "ownership lifecycle should notify execution layer")
 
-print("ok - ownership protocol election and combat freeze behavior")
+print("ok - ownership protocol election and Midnight challenge freeze behavior")
