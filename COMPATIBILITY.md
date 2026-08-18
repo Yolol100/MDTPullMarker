@@ -22,10 +22,13 @@ The integration prefers `MythicDungeonToolsAPI`; legacy `_G.MDT` access is isola
 - Active Challenge Map identity is authoritative.
 - rc58 detects incompatible pre-rc52 peers and remains passive rather than risking multiple active marker owners.
 - Only eligible clients that have announced this add-on participate in grouped marker-owner election; unrelated tanks or leaders cannot suppress all marking.
+- Grouped ownership is settled before an active Mythic+ challenge and frozen for the full challenge.
+- Midnight chat/addon-message lockdown is treated as expected transport suspension; the running challenge does not send ownership heartbeats or re-elect between combats.
+- If the frozen owner is positively proven to have left the group during a challenge, ownership fails closed rather than electing a replacement without peer communication.
 - Midnight pull-death evidence uses the supported `UNIT_DIED` event. A restricted/secret GUID remains advisory and cannot complete a pull.
 
 All marker operators in a group should use a current build.
 
 ## Repository validation
 
-The checked-in GitHub workflows install Lua 5.1, compile the Lua source, run focused event/death and ownership-guard regressions, and verify the active TOC inventory. The current public rc58 tree does not contain the previously documented broader static-analysis or packaging suites; those absent assets are not current automated release evidence.
+The checked-in GitHub workflows install Lua 5.1, compile the Lua source, run the focused regression suite, execute the repository audit and verify the active TOC/package inventory. The `scripts/` directory contains the current repository-audit and deterministic release-build helpers; it is tooling only and is not part of the WoW runtime inventory.
