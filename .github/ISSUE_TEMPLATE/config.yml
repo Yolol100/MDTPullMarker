@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Yolol100/MDTPullMarker/blob/main/SECURITY.md
+    about: Report security-sensitive findings through the process in SECURITY.md instead of a public issue.
+  - name: Release and compatibility guidance
+    url: https://github.com/Yolol100/MDTPullMarker/blob/main/RELEASING.md
+    about: Check supported release, packaging and live-client validation requirements before filing a release question.
