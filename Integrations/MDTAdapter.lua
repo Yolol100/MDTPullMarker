@@ -15,6 +15,7 @@ local VERIFIED_SOURCE_VERSIONS = {
   ["6.2.0-alpha5"] = true,
   ["6.2.1"] = true,
   ["6.2.2"] = true,
+  ["6.2.4"] = true,
 }
 
 local state = {
@@ -907,7 +908,7 @@ local function installRouteMutationHooks()
     if ok then installed = installed + 1 end
   end
 
-  -- MDT 6.2.2 mutates enemy membership through the public MDT method during
+  -- MDT 6.2.x mutates enemy membership through the public MDT method during
   -- both click and drag-preview flows. Hook the mutator itself so drag scripts
   -- do not depend on mixin method names that are installed via SetScript.
   local mixin = _G.MDTDungeonEnemyMixin
