@@ -1,8 +1,8 @@
 # MDT Pull Marker 1.0.0-rc59
 
-This repository contains the current World of Warcraft addon source for MDT Pull Marker.
+MDT Pull Marker is a World of Warcraft Retail addon that turns Mythic Dungeon Tools target assignments into pull-aware marker macros while staying fail-closed around combat, route changes and Midnight messaging restrictions.
 
-## Maintained source layout
+## Source layout
 
 - `Core/` - data, validation, database and planning logic
 - `Integrations/` - Mythic Dungeon Tools integration boundaries
@@ -10,20 +10,24 @@ This repository contains the current World of Warcraft addon source for MDT Pull
 - `UI/` - configuration and runtime views
 - `Locale/` - localization
 - `tests/` - focused Lua 5.1 regression coverage
-- `scripts/` - repository audit and deterministic release packaging helpers
+- `scripts/` - repository audit and deterministic release packaging
 
-The active runtime inventory is defined by `MDTPullMarker.toc`; `tests/` and `scripts/` are repository/release tooling and are not loaded by WoW.
+The active runtime inventory is defined exclusively by `MDTPullMarker.toc`. Tests, scripts, repository metadata and release documentation are never included in the addon runtime ZIP unless explicitly allowlisted by the deterministic packager.
 
-## Repository assurance status
+## Compatibility
 
-The current rc59 tree contains a Lua 5.1 regression harness in `tests/` covering event inventory, input hardening, MDT integration boundaries, marker execution, grouped marker ownership, migrations, pull-death tracking, runtime control and smart macro management. `scripts/audit_repository.py` and `scripts/build_release.py` provide repository and package validation in addition to the checked-in GitHub workflows.
+The current rc59 source targets the Retail 12.1 interface contract and has source-verified Mythic Dungeon Tools 6.2.4 integration. The addon does not duplicate MDT dungeon/forces data; Season 2 route and force corrections remain owned by MDT.
 
-Grouped marker ownership is elected before a running Mythic+ challenge and then frozen for the challenge. Midnight chat/addon-message lockdown is treated as an expected communication suspension rather than as ownership loss; if the frozen owner is positively proven to have left the group, marking fails closed instead of electing a replacement without communication.
+Grouped marker ownership is settled before a Mythic+ challenge and frozen for that challenge. Midnight chat/addon-message lockdown is treated as expected communication suspension, and positively losing the frozen owner fails closed instead of electing a replacement without communication.
 
-Season 2 source review is based on the Retail 12.1 interface contract and upstream Mythic Dungeon Tools 6.2.4. The add-on does not duplicate MDT dungeon-force data; Season 2 route/force corrections remain owned by MDT. Automatic bulk marking stays capped at three targets per macro activation, matching Blizzard's current target-marker restriction.
+Automatic marking remains capped at three targets per macro activation, matching Blizzard's current target-marker restriction.
 
-The checked-in GitHub workflows compile Lua sources with Lua 5.1, run the regression harness, audit the repository and verify release/package invariants.
+## Quality and release model
 
-The three historical duplicate source paths remain in the repository only as inert retired placeholders; active runtime code is defined by the TOC.
+GitHub Actions compile all Lua with Lua 5.1, run focused regressions, audit repository hygiene and verify deterministic packaging. Actions are pinned to immutable commit SHAs and Dependabot is configured to maintain those pins.
 
-Before a public release, validate the addon on the current Retail client and verify grouped operation, route changes, persistence and UI behavior with the installed MDT build.
+Generated ZIPs and checksums are release outputs, not source files. Tagged `v<VERSION>` builds are rebuilt from source, checked twice for determinism, SHA-256 hashed, attested and published as GitHub Release assets. See `RELEASING.md` for the live-client and CurseForge release gate.
+
+## Public release status
+
+The source is Season 2-ready. A stable public release still requires the live Retail smoke-test matrix on the intended client/MDT versions. Pre-release versions such as `1.0.0-rc59` should remain preview/beta distribution until that gate passes.

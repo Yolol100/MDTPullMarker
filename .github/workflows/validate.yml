@@ -37,19 +37,13 @@ jobs:
             entry="${entry//\\//}"
             test -f "$entry" || { echo "Missing TOC file: $entry" >&2; exit 1; }
           done < MDTPullMarker.toc
-      - name: Verify retired modules stay unloaded and inert
+      - name: Verify retired duplicate modules stay deleted
         shell: bash
         run: |
           set -euo pipefail
-          for retired_toc in 'Runtime\PullController.lua' 'Integrations\MDTUI.lua' 'UI\Configuration.lua'; do
-            if grep -Fq "$retired_toc" MDTPullMarker.toc; then
-              echo "Retired module returned to the active TOC: $retired_toc" >&2
-              exit 1
-            fi
-          done
           for retired_file in 'Runtime/PullController.lua' 'Integrations/MDTUI.lua' 'UI/Configuration.lua'; do
-            if test -f "$retired_file" && grep -Ev '^[[:space:]]*(--.*)?$' "$retired_file" | grep -q .; then
-              echo "Retired placeholder contains executable/non-comment content: $retired_file" >&2
+            if test -e "$retired_file"; then
+              echo "Retired duplicate source path returned: $retired_file" >&2
               exit 1
             fi
           done

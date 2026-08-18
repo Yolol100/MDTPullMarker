@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible MDT Pull Marker problem.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please reproduce with the current release and current Mythic Dungeon Tools build before filing.
+  - type: input
+    id: addon-version
+    attributes:
+      label: MDT Pull Marker version
+      placeholder: 1.0.0-rc59
+    validations:
+      required: true
+  - type: input
+    id: wow-build
+    attributes:
+      label: WoW Retail version/build
+      placeholder: 12.1.x / build number
+    validations:
+      required: true
+  - type: input
+    id: mdt-version
+    attributes:
+      label: Mythic Dungeon Tools version
+      placeholder: 6.2.4
+    validations:
+      required: true
+  - type: input
+    id: locale
+    attributes:
+      label: Client locale
+      placeholder: enUS, enGB, deDE, nlNL, ...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Include route state, whether a Mythic+ challenge was active, group state and what you clicked/changed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: errors
+    attributes:
+      label: Lua errors / diagnostic output
+      description: Remove personal data before pasting logs.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submit checks
+      options:
+        - label: I reproduced this with the current release and current MDT build.
+          required: true
+        - label: I did not include account credentials, private keys or other secrets.
+          required: true

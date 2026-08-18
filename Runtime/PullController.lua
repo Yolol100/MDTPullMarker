@@ -1,6 +1,0 @@
--- Retired legacy source file.
---
--- The active runtime controller is Runtime/RuntimeController.lua and is the only
--- controller loaded by MDTPullMarker.toc. This file intentionally exports no
--- module so repository readers cannot mistake the old implementation for active
--- release code.

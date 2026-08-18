@@ -1,0 +1,15 @@
+package-as: MDTPullMarker
+
+ignore:
+  - .github
+  - .editorconfig
+  - .gitattributes
+  - .gitignore
+  - .pkgmeta
+  - CHANGELOG.md
+  - COMPATIBILITY.md
+  - README.md
+  - RELEASING.md
+  - SECURITY.md
+  - scripts
+  - tests

@@ -1,2 +1,0 @@
--- Retired source placeholder.
--- Active code is listed in MDTPullMarker.toc.

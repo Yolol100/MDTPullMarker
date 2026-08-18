@@ -1,0 +1,26 @@
+# Generated output
+/dist/
+/build/
+/coverage/
+__pycache__/
+*.py[cod]
+
+# Local environments and editors
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs and local secrets
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
