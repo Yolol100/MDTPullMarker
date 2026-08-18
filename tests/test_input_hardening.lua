@@ -93,6 +93,21 @@ assert(body:find("/targetexact Dangerous Mob", 1, true))
 assert(body:find("/tm [harm,nodead] ~8", 1, true), "markers must preserve existing target markers")
 assert(MarkerMacro.IsRecognizedBody(body) == true, "self-generated bulk macro must be recognized")
 
+-- Blizzard's current Midnight macro contract permits at most three target-marker
+-- operations in a very short window. Three must remain usable; four must fail closed.
+local third = {
+  pullIndex = 1,
+  batchIndex = 1,
+  routeFingerprint = "route-abc",
+  assignmentID = "E3:C1",
+  marker = 6,
+  targetName = "Third Mob",
+  executionMethod = "exact-name",
+}
+local season2Boundary = assert(MarkerMacro.BuildBulkBody({ identities[1], identities[2], third }))
+assert(season2Boundary:find("/targetexact Third Mob", 1, true), "three-marker Season 2 boundary must stay usable")
+assert(MarkerMacro.IsRecognizedBody(season2Boundary) == true)
+
 -- The recognition gate must reject lookalike macros with arbitrary commands or
 -- altered marker semantics even when they contain a valid-looking completion token.
 local injected = body:gsub("/cleartarget", "/run print('x')", 1)
@@ -100,7 +115,7 @@ assert(MarkerMacro.IsRecognizedBody(injected) == false)
 local overwrite = body:gsub("~8", "8", 1)
 assert(MarkerMacro.IsRecognizedBody(overwrite) == false)
 
-local tooMany = { identities[1], identities[2], identities[1], identities[2] }
+local tooMany = { identities[1], identities[2], third, identities[1] }
 local oversized, oversizedReason = MarkerMacro.BuildBulkBody(tooMany)
 assert(oversized == nil and oversizedReason == "bulk-batch-over-capacity")
 
@@ -108,8 +123,8 @@ local ambiguous = {
   pullIndex = 1,
   batchIndex = 1,
   routeFingerprint = "route-abc",
-  assignmentID = "E3:C1",
-  marker = 6,
+  assignmentID = "E4:C1",
+  marker = 5,
   targetName = "Same Name",
   executionMethod = "manual",
 }
