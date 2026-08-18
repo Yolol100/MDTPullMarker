@@ -51,7 +51,8 @@ local utf8Clipped = assert(Addon.Migrations.Run(currentDB({
 })))
 local utf8Note = utf8Clipped.backups[1].data.note
 assert(#utf8Note <= Addon.Migrations.MaxBackupStringBytes, "UTF-8 backup string exceeded byte cap")
-assert(not utf8Note:match("[\128-\191]$"), "UTF-8 backup string ended on a continuation byte")
+local previousByte, lastByte = utf8Note:byte(-2), utf8Note:byte(-1)
+assert(previousByte == 0xC3 and lastByte == 0xA9, "UTF-8 backup string ended with an incomplete character")
 
 -- Cyclic/foreign archival content cannot poison normal startup.
 local cyclicData = { label = "safe" }
