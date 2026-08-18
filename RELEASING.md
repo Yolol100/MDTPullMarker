@@ -14,7 +14,7 @@
 
 ## Tagged release
 
-Push a signed/intentional tag named `v<VERSION>`, for example `v1.0.0-rc59`. `.github/workflows/release.yml` verifies that the tag exactly matches the TOC version, reruns source/regression checks, builds the archive twice, verifies byte-for-byte determinism, generates `SHA256SUMS.txt`, creates GitHub artifact provenance and publishes the GitHub Release assets.
+Push a signed/intentional tag named `v<VERSION>`, for example `v1.0.0-rc59`. `.github/workflows/release.yml` verifies that the tag exactly matches the TOC version, reruns source/regression checks, builds the archive twice, verifies byte-for-byte determinism, generates `SHA256SUMS.txt`, creates GitHub artifact provenance and creates a **draft** GitHub Release with the generated assets. Publish that draft only after the live Retail acceptance gate above has passed.
 
 Do not commit generated ZIPs, checksums, build directories or local test output back to `main`.
 
