@@ -6,8 +6,10 @@ Addon.Migrations = Migrations
 local DataUtils = Addon.DataUtils
 local CURRENT_SCHEMA = 12
 local MAX_BACKUPS = 2
-local MAX_BACKUP_DEPTH = 14
-local MAX_BACKUP_ENTRIES = 30000
+local MAX_BACKUP_DEPTH = 10
+local MAX_BACKUP_ENTRIES = 5000
+local MAX_BACKUP_STRING_BYTES = 2048
+local MAX_BACKUP_KEY_BYTES = 256
 
 local function timestamp()
   if type(date) == "function" then return date("%Y-%m-%d %H:%M:%S") end
@@ -45,17 +47,76 @@ function Migrations.DefaultDatabase()
   }
 end
 
+local function sanitizeBackupValue(value, state, depth)
+  if DataUtils.IsSecret(value) then return nil, true end
+  local valueType = type(value)
+  if valueType == "nil" or valueType == "boolean" then return value, false end
+  if valueType == "number" then
+    local safe = DataUtils.SafeNumber(value)
+    return safe, safe == nil
+  end
+  if valueType == "string" then
+    if #value <= MAX_BACKUP_STRING_BYTES then return value, false end
+    return DataUtils.UTF8SafePrefix(value, MAX_BACKUP_STRING_BYTES), true
+  end
+  if valueType ~= "table" or depth > MAX_BACKUP_DEPTH or state.seen[value] then
+    return nil, true
+  end
+
+  state.seen[value] = true
+  local result, truncated = {}, false
+  for key, child in pairs(value) do
+    state.entries = state.entries + 1
+    if state.entries > MAX_BACKUP_ENTRIES then
+      truncated = true
+      break
+    end
+
+    local safeKey
+    if type(key) == "number" then
+      safeKey = DataUtils.SafeNumber(key)
+    elseif type(key) == "string" then
+      safeKey = key
+      if #safeKey > MAX_BACKUP_KEY_BYTES then
+        safeKey = DataUtils.UTF8SafePrefix(safeKey, MAX_BACKUP_KEY_BYTES)
+        truncated = true
+      end
+    end
+
+    if safeKey == nil then
+      truncated = true
+    else
+      local copied, childTruncated = sanitizeBackupValue(child, state, depth + 1)
+      truncated = truncated or childTruncated
+      if copied ~= nil then
+        if result[safeKey] ~= nil and safeKey ~= key then truncated = true end
+        result[safeKey] = copied
+      elseif child ~= nil then
+        truncated = true
+      end
+    end
+  end
+  state.seen[value] = nil
+  return result, truncated
+end
+
+local function sanitizeBackupData(raw)
+  if type(raw) ~= "table" or DataUtils.IsSecret(raw) then return nil, true end
+  return sanitizeBackupValue(raw, { entries = 0, seen = {} }, 1)
+end
+
 local function copyArchivedBackups(rawBackups)
   local result = {}
   if type(rawBackups) ~= "table" or DataUtils.IsSecret(rawBackups) then return result end
   for index = 1, math.min(#rawBackups, MAX_BACKUPS) do
     local source = rawBackups[index]
     if type(source) == "table" and not DataUtils.IsSecret(source) and type(source.data) == "table" then
-      local data = DataUtils.DeepCopy(source.data, { maxDepth = MAX_BACKUP_DEPTH, maxEntries = MAX_BACKUP_ENTRIES })
+      local data, truncated = sanitizeBackupData(source.data)
       if data then
         result[#result + 1] = {
           createdAt = DataUtils.SafeString(source.createdAt, 40, true) or "unknown-time",
           schemaVersion = DataUtils.SafeNumber(source.schemaVersion) or 0,
+          truncated = source.truncated == true or truncated == true,
           data = data,
         }
       end
@@ -69,20 +130,22 @@ local function copyDatabaseWithoutBackupPayload(rawDB, maxDepth, maxEntries)
   for key, value in pairs(rawDB or {}) do if key ~= "backups" then source[key] = value end end
   local copied, copyError = DataUtils.DeepCopy(source, { maxDepth = maxDepth or 14, maxEntries = maxEntries or 30000 })
   if not copied then return nil, copyError end
-  -- Backups are archival only, but they still live in SavedVariables. Copy them
-  -- through the same bounded primitive/table model so corrupt or cyclic archival
-  -- payload cannot stay attached to an otherwise healthy current database.
+  -- Backups are archival only, but they still live in SavedVariables. Sanitize
+  -- them separately so oversized legacy strings, cycles and foreign values do
+  -- not survive forever inside an otherwise healthy current database.
   copied.backups = copyArchivedBackups(rawDB and rawDB.backups)
   return copied
 end
 
 local function backupCurrent(rawDB)
-  local backup, copyError = copyDatabaseWithoutBackupPayload(rawDB, 14, 30000)
-  if not backup then return nil, "backup-failed:"..tostring(copyError) end
-  backup.backups = nil
+  local source = {}
+  for key, value in pairs(rawDB or {}) do if key ~= "backups" then source[key] = value end end
+  local backup, truncated = sanitizeBackupData(source)
+  if not backup then return nil, "backup-failed" end
   return {
     createdAt = timestamp(),
     schemaVersion = DataUtils.SafeNumber(rawDB.schemaVersion) or 0,
+    truncated = truncated == true,
     data = backup,
   }
 end
@@ -287,3 +350,7 @@ function Migrations.Run(rawDB)
 end
 
 Migrations.CurrentSchema = CURRENT_SCHEMA
+Migrations.MaxBackups = MAX_BACKUPS
+Migrations.MaxBackupDepth = MAX_BACKUP_DEPTH
+Migrations.MaxBackupEntries = MAX_BACKUP_ENTRIES
+Migrations.MaxBackupStringBytes = MAX_BACKUP_STRING_BYTES
