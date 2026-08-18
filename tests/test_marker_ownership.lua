@@ -181,7 +181,47 @@ state = ownership:GetState()
 assert(state.challengeFrozen == false, "challenge end must release challenge freeze")
 assert(state.owner == "Player-Realm", "solo post-challenge state should elect the local player")
 
+-- Starting a key while the short ownership settle window is still open must
+-- fail closed for that challenge. Even if a provisional deterministic winner is
+-- visible locally, peers may not have converged yet; freezing it could create a
+-- split-brain owner after Midnight locks addon communications.
+tankPresent = true
+clock = 200.0
+ownership:OnGroupChanged("pre-key-roster-refresh")
+accepted = ownership:OnAddonMessage(
+  "MDTPM_OWNER",
+  "H|1.0|1|1",
+  "PARTY",
+  "Tank-Realm"
+)
+assert(accepted == true, "compatible peer should be accepted during settle")
+state = ownership:GetState()
+assert(state.electionPending == true, "pre-key refresh must still be settling")
+assert(state.owner == "Tank-Realm", "provisional owner should be visible before challenge freeze")
+
+local sendsBeforeUnsettledChallenge = #sent
+clock = 200.2
+challengeMapID = 504
+chatLockdown = true
+ownership:RefreshEligibility("challenge-started-during-settle")
+state = ownership:GetState()
+assert(state.challengeFrozen == true, "challenge must freeze even when election is unsettled")
+assert(state.owner == nil, "unsettled challenge start must not freeze a provisional owner")
+assert(state.ownerReason == "challenge-election-unsettled", "unsettled challenge start must be diagnosed")
+assert(state.electionPending == false, "challenge freeze must suppress pending election state")
+assert(#sent == sendsBeforeUnsettledChallenge, "unsettled challenge start must not send during lockdown")
+
+isOwner, reason, owner = ownership:IsOwner()
+assert(isOwner == false and reason == "marker-owner-unavailable" and owner == nil,
+  "unsettled challenge must remain passive instead of risking split-brain")
+
+challengeMapID = nil
+chatLockdown = false
+ownership:OnWorldChanged("unsettled-challenge-ended")
+state = ownership:GetState()
+assert(state.challengeFrozen == false, "challenge end must release unsettled freeze")
+
 assert(#sent > 0, "pre-challenge ownership initialization should exercise addon-message transport")
 assert(#instructionChanges > 0, "ownership lifecycle should notify execution layer")
 
-print("ok - ownership protocol election and Midnight challenge freeze behavior")
+print("ok - ownership protocol election, Midnight challenge freeze and unsettled-start fail-closed behavior")
