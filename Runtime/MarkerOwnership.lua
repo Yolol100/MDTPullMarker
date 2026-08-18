@@ -23,17 +23,14 @@ local state = {
   settlingUntil = 0,
   combatOwner = nil,
   combatFrozen = false,
+  challengeOwner = nil,
+  challengeFrozen = false,
   serial = 0,
   heartbeatSerial = 0,
 }
 
 local function isSecret(value)
   return Addon.IsSecret and Addon.IsSecret(value) or false
-end
-
-local function effectiveOwner()
-  if state.combatFrozen then return state.combatOwner end
-  return state.owner
 end
 
 local function now()
@@ -117,6 +114,41 @@ local function raidStatus()
   return value
 end
 
+local function chatMessagingLockdown()
+  if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.InChatMessagingLockdown) ~= "function" then
+    return false
+  end
+  local ok, value = pcall(C_ChatInfo.InChatMessagingLockdown)
+  if not ok or isSecret(value) or type(value) ~= "boolean" then return true end
+  return value
+end
+
+-- Midnight suspends addon/chat messaging while a Mythic+ challenge is active.
+-- Detect the challenge independently of DungeonSession's delayed refresh so a
+-- CHALLENGE_MODE_START cannot race a heartbeat into the lockdown window.
+local function challengeActive()
+  if type(C_ChallengeMode) == "table" and type(C_ChallengeMode.GetActiveChallengeMapID) == "function" then
+    local ok, value = pcall(C_ChallengeMode.GetActiveChallengeMapID)
+    if ok and not isSecret(value) then
+      local mapID = tonumber(value)
+      if mapID and mapID > 0 then return true end
+    end
+  end
+  if Addon.DungeonSession and type(Addon.DungeonSession.GetState) == "function" then
+    local session = Addon.DungeonSession:GetState()
+    if type(session) == "table" and session.isMythicPlus == true and session.challengeCompleted ~= true then
+      return true
+    end
+  end
+  return false
+end
+
+local function effectiveOwner()
+  if state.challengeFrozen then return state.challengeOwner end
+  if state.combatFrozen then return state.combatOwner end
+  return state.owner
+end
+
 local function roster()
   local result = {}
   local function add(unit)
@@ -166,8 +198,8 @@ local function roster()
 end
 
 local function currentEligibility()
-  local session = Addon.DungeonSession:GetState()
-  local runtime = Addon.RuntimeController:GetState()
+  local session = Addon.DungeonSession and Addon.DungeonSession:GetState() or nil
+  local runtime = Addon.RuntimeController and Addon.RuntimeController:GetState() or nil
   if type(UnitIsDeadOrGhost) ~= "function" then return false end
   local aliveOK, deadOrGhost = pcall(UnitIsDeadOrGhost, "player")
   if not aliveOK or isSecret(deadOrGhost) or type(deadOrGhost) ~= "boolean" then return false end
@@ -234,6 +266,8 @@ local function hasLegacyPeer()
 end
 
 local function recomputeOwner(reason)
+  if state.challengeFrozen then return state.challengeOwner end
+
   local resolvedLocalName = fullNameForUnit("player")
   if resolvedLocalName then state.localName = resolvedLocalName end
   state.localName = state.localName or "player"
@@ -289,6 +323,75 @@ local function recomputeOwner(reason)
   return state.owner
 end
 
+-- During a running key we never re-elect. We only invalidate the frozen owner
+-- when the current roster positively proves that owner left. Unknown/secret
+-- roster reads preserve the freeze instead of risking two clients taking over.
+local function frozenOwnerPresent()
+  local ownerKey = canonical(state.challengeOwner)
+  if not ownerKey then return false end
+
+  local playerName = fullNameForUnit("player")
+  local playerKey = canonical(playerName)
+  if playerKey == ownerKey then return true end
+
+  local count = groupCount()
+  local raid = raidStatus()
+  if count == nil or raid == nil then return nil end
+  if count <= 1 then return false end
+  if not raid and count > 5 then return nil end
+
+  if raid then
+    for index = 1, count do
+      local name = fullNameForUnit("raid"..index)
+      if not name then return nil end
+      if canonical(name) == ownerKey then return true end
+    end
+  else
+    for index = 1, count - 1 do
+      local name = fullNameForUnit("party"..index)
+      if not name then return nil end
+      if canonical(name) == ownerKey then return true end
+    end
+  end
+  return false
+end
+
+local function syncChallengeFreeze(reason)
+  local active = challengeActive()
+  if active then
+    if not state.challengeFrozen then
+      state.challengeFrozen = true
+      state.serial = state.serial + 1 -- cancel any pending settle callback
+      if now() < state.settlingUntil then
+        state.challengeOwner = nil
+        state.ownerReason = "challenge-election-unsettled"
+      else
+        state.challengeOwner = state.owner
+        state.ownerReason = state.challengeOwner and "challenge-owner-frozen" or "challenge-owner-unavailable"
+      end
+      state.settlingUntil = 0
+      state.combatOwner = nil
+      state.combatFrozen = false
+    end
+
+    if state.challengeOwner then
+      local present = frozenOwnerPresent()
+      if present == false then
+        state.challengeOwner = nil
+        state.ownerReason = "challenge-owner-left"
+      end
+    end
+    return true
+  end
+
+  if state.challengeFrozen then
+    state.challengeFrozen = false
+    state.challengeOwner = nil
+    state.ownerReason = reason or "challenge-ended"
+  end
+  return false
+end
+
 local function distribution()
   if inGroup() ~= true then return nil end
   local raid = raidStatus()
@@ -311,13 +414,16 @@ end
 local function failCommunication(reason)
   state.commAvailable = false
   state.commFailureReason = reason or "comm-unavailable"
-  state.owner = nil
-  state.ownerReason = state.commFailureReason
-  state.settlingUntil = 0
+  if not state.challengeFrozen then
+    state.owner = nil
+    state.ownerReason = state.commFailureReason
+    state.settlingUntil = 0
+  end
   return false
 end
 
 local function registerCommunication()
+  if state.challengeFrozen or challengeActive() or chatMessagingLockdown() then return false end
   if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.RegisterAddonMessagePrefix) ~= "function" then
     return failCommunication("comm-register-unavailable")
   end
@@ -340,30 +446,44 @@ local function registerCommunication()
 end
 
 local function send(kind)
-  if not state.commAvailable then return false end
+  if state.challengeFrozen or challengeActive() or chatMessagingLockdown() then
+    return false, "comm-suspended"
+  end
+  if not state.commAvailable then return false, "comm-unavailable" end
   if type(C_ChatInfo) ~= "table" or type(C_ChatInfo.SendAddonMessage) ~= "function" then
-    return failCommunication("comm-send-unavailable")
+    return failCommunication("comm-send-unavailable"), "comm-send-unavailable"
   end
   local channel = distribution()
-  if not channel then return failCommunication("comm-channel-unavailable") end
+  if not channel then return failCommunication("comm-channel-unavailable"), "comm-channel-unavailable" end
   state.localEligible = currentEligibility()
   local payload = table.concat({ tostring(kind or "H"), tostring(Addon.Version or "unknown"), state.localEligible and "1" or "0", tostring(OWNER_PROTOCOL_VERSION) }, "|")
   local ok, result = pcall(C_ChatInfo.SendAddonMessage, PREFIX, payload, channel)
   if not ok or not addonMessageCallSucceeded(result) then
-    return failCommunication("comm-send-failed")
+    return failCommunication("comm-send-failed"), "comm-send-failed"
   end
   return true
 end
 
-local function refreshExecutor(reason)
-  recomputeOwner(reason)
+local function refreshVisibleUI()
+  if Addon.RuntimeFrame and Addon.RuntimeFrame.IsOpen and Addon.RuntimeFrame:IsOpen() then
+    Addon.RuntimeFrame:Refresh()
+  end
+end
+
+local function notifyExecutor(reason)
   if Addon.MarkerExecutor and type(Addon.MarkerExecutor.OnInstructionChanged) == "function" then
     Addon.MarkerExecutor:OnInstructionChanged("marker-owner:"..tostring(reason or "changed"))
   end
-  if Addon.RuntimeFrame and Addon.RuntimeFrame.IsOpen and Addon.RuntimeFrame:IsOpen() then Addon.RuntimeFrame:Refresh() end
+  refreshVisibleUI()
+end
+
+local function refreshExecutor(reason)
+  if not state.challengeFrozen then recomputeOwner(reason) end
+  notifyExecutor(reason)
 end
 
 local function parkUnsettledExecution(reason)
+  if state.challengeFrozen then return false, "challenge-owner-frozen" end
   if state.combatFrozen then return false, "combat-owner-frozen" end
   if Addon.MarkerExecutor and type(Addon.MarkerExecutor.OnInstructionChanged) == "function" then
     return Addon.MarkerExecutor:OnInstructionChanged("marker-owner:"..tostring(reason or "election-unsettled"))
@@ -381,6 +501,14 @@ local function scheduleHeartbeat()
   local function tick()
     if not state.initialized or serial ~= state.heartbeatSerial then return end
     local previousOwner = effectiveOwner()
+
+    if syncChallengeFreeze("heartbeat-challenge-ended") then
+      local currentOwner = effectiveOwner()
+      if previousOwner ~= currentOwner then notifyExecutor("challenge-owner-changed") end
+      C_Timer.After(HEARTBEAT_SECONDS, tick)
+      return
+    end
+
     local grouped = inGroup()
     if grouped == true and not state.commAvailable then
       if registerCommunication() then
@@ -390,7 +518,7 @@ local function scheduleHeartbeat()
       end
     else
       recomputeOwner("heartbeat")
-      if grouped == true and state.commAvailable then
+      if grouped == true and state.commAvailable and not chatMessagingLockdown() then
         send(hasLegacyPeer() and "H" or "B")
       end
     end
@@ -406,6 +534,8 @@ local function scheduleHeartbeat()
 end
 
 startSettle = function(reason)
+  if syncChallengeFreeze(reason or "challenge-ended") then return end
+
   local grouped = inGroup()
   if grouped == true and not state.commAvailable then registerCommunication() end
   if grouped ~= true or not state.commAvailable then
@@ -428,7 +558,7 @@ startSettle = function(reason)
   end
   if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
     C_Timer.After(SETTLE_SECONDS + 0.05, function()
-      if serial ~= state.serial then return end
+      if serial ~= state.serial or syncChallengeFreeze("settle-challenge-started") then return end
       state.settlingUntil = 0
       if not state.combatFrozen then refreshExecutor("election-settled") end
     end)
@@ -446,28 +576,42 @@ function Ownership:Initialize()
 end
 
 function Ownership:RefreshEligibility(reason)
+  if syncChallengeFreeze(reason or "eligibility") then
+    state.localEligible = currentEligibility()
+    return self:GetState()
+  end
+
   local before = state.localEligible
   state.localEligible = currentEligibility()
   recomputeOwner(reason or "eligibility")
-  if before ~= state.localEligible and not send("H") and not state.combatFrozen then
-    refreshExecutor("eligibility-comm-failed")
+  if before ~= state.localEligible and not state.combatFrozen then
+    local sent = send("H")
+    if not sent and not chatMessagingLockdown() then refreshExecutor("eligibility-comm-failed") end
   end
   return self:GetState()
 end
 
 function Ownership:OnGroupChanged(reason)
+  local previousOwner = effectiveOwner()
+  if syncChallengeFreeze(reason or "group-changed") then
+    if previousOwner ~= effectiveOwner() then notifyExecutor("challenge-owner-left") end
+    return self:GetState()
+  end
   state.peers = {}
   startSettle(reason or "group-changed")
   return self:GetState()
 end
 
 function Ownership:OnWorldChanged(reason)
+  if syncChallengeFreeze(reason or "world-changed") then return self:GetState() end
   startSettle(reason or "world-changed")
   return self:GetState()
 end
 
 function Ownership:OnAddonMessage(prefix, message, channel, sender)
   if prefix ~= PREFIX then return false end
+  if syncChallengeFreeze("addon-message") then return false end
+
   channel = safeString(channel, 20)
   if channel ~= "PARTY" and channel ~= "RAID" then return false end
   sender = normalizeFullName(safeString(sender, 180))
@@ -491,7 +635,7 @@ function Ownership:OnAddonMessage(prefix, message, channel, sender)
   }
   local previousOwner = effectiveOwner()
   recomputeOwner("peer-update")
-  if kind == "H" then send("R") end
+  if kind == "H" and not chatMessagingLockdown() then send("R") end
   local currentOwner = effectiveOwner()
   if previousOwner ~= currentOwner and not state.combatFrozen and now() >= state.settlingUntil then
     refreshExecutor("peer-owner-changed")
@@ -500,6 +644,7 @@ function Ownership:OnAddonMessage(prefix, message, channel, sender)
 end
 
 function Ownership:OnCombatStarted()
+  if syncChallengeFreeze("combat-start") then return effectiveOwner() end
   recomputeOwner("combat-start")
   state.combatFrozen = true
   if inGroup() == true and state.commAvailable and now() < state.settlingUntil then
@@ -512,6 +657,11 @@ function Ownership:OnCombatStarted()
 end
 
 function Ownership:OnCombatEnded()
+  if syncChallengeFreeze("combat-ended") then
+    state.combatOwner = nil
+    state.combatFrozen = false
+    return self:GetState()
+  end
   state.combatOwner = nil
   state.combatFrozen = false
   startSettle("combat-ended")
@@ -520,6 +670,14 @@ end
 
 function Ownership:IsOwner()
   if not state.initialized then self:Initialize() end
+
+  if syncChallengeFreeze("query") then
+    local owner = effectiveOwner()
+    if not owner then return false, "marker-owner-unavailable", nil end
+    if canonical(owner) ~= canonical(state.localName) then return false, "marker-owner-passive", owner end
+    return true, "marker-owner-active", owner
+  end
+
   state.localEligible = currentEligibility()
   recomputeOwner("query")
   local owner = effectiveOwner()
@@ -547,6 +705,7 @@ function Ownership:IsOwner()
 end
 
 function Ownership:GetState()
+  syncChallengeFreeze("state-query")
   local owner = effectiveOwner()
   local peerCount, legacyPeerCount, incompatiblePeerCount = 0, 0, 0
   for _, peer in pairs(state.peers) do
@@ -563,7 +722,8 @@ function Ownership:GetState()
     owner = owner,
     isOwner = owner and canonical(owner) == canonical(state.localName) or false,
     ownerReason = state.ownerReason,
-    electionPending = inGroup() == true and state.commAvailable and not state.combatFrozen and now() < state.settlingUntil or false,
+    electionPending = inGroup() == true and state.commAvailable and not state.combatFrozen
+      and not state.challengeFrozen and now() < state.settlingUntil or false,
     peerCount = peerCount,
     legacyPeerCount = legacyPeerCount,
     incompatiblePeerCount = incompatiblePeerCount,
@@ -571,6 +731,7 @@ function Ownership:GetState()
     minimumCompatibleOwnerProtocolVersion = MIN_COMPATIBLE_OWNER_PROTOCOL_VERSION,
     legacyMinimumCompatibleOwnerProtocolRC = LEGACY_MIN_COMPATIBLE_OWNER_PROTOCOL_RC,
     combatFrozen = state.combatFrozen,
+    challengeFrozen = state.challengeFrozen,
     heartbeatSeconds = HEARTBEAT_SECONDS,
     peerTTLSeconds = PEER_TTL_SECONDS,
   }
