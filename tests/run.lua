@@ -3,6 +3,7 @@ local files = {
   "tests/test_pull_death_tracker.lua",
   "tests/test_marker_ownership.lua",
   "tests/test_migrations.lua",
+  "tests/test_migration_backups.lua",
   "tests/test_mdt_focus_marker_bridge.lua",
   "tests/test_input_hardening.lua",
   "tests/test_mdt_adapter.lua",
