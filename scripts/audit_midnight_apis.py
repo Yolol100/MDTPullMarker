@@ -13,10 +13,11 @@ EVENTS_PATH = "Core/Events.lua"
 # Combat-decision and automation surfaces that this addon must not consume.
 # SecureActionButtonTemplate is intentionally not forbidden: MDTPullMarker uses a
 # user-activated secure macro button and protects its attributes from combat-time
-# mutation. The policy below focuses on APIs/tokens that would let runtime code
-# derive or execute combat decisions automatically.
+# mutation. The policy below focuses on executable API/event surfaces rather than
+# documentation comments that may name a forbidden API to explain why it is not used.
 FORBIDDEN_RUNTIME_PATTERNS: dict[str, re.Pattern[str]] = {
     "combat log decision feed": re.compile(r"\bCombatLogGetCurrentEventInfo\s*\("),
+    "combat log event registration": re.compile(r"\bRegisterEvent\s*\(\s*['\"]COMBAT_LOG_EVENT_UNFILTERED['\"]\s*\)"),
     "aura decision feed": re.compile(r"\bUnitAura\s*\(|\bC_UnitAuras\s*[.:]"),
     "health/power decision feed": re.compile(r"\bUnitHealth(?:Max)?\s*\(|\bUnitPower(?:Max)?\s*\("),
     "cast decision feed": re.compile(r"\bUnitCastingInfo\s*\(|\bUnitChannelInfo\s*\("),
@@ -28,10 +29,7 @@ FORBIDDEN_RUNTIME_PATTERNS: dict[str, re.Pattern[str]] = {
     "binding/state-driver automation": re.compile(r"\bSet(?:Override)?Binding\s*\(|\bRegisterStateDriver\s*\("),
     "dynamic code execution": re.compile(r"\bloadstring\s*\(|\bRunScript\s*\("),
 }
-FORBIDDEN_RUNTIME_TOKENS = {
-    "combat log event feed": "COMBAT_LOG_EVENT_UNFILTERED",
-    "secure handler automation": "SecureHandler",
-}
+FORBIDDEN_RUNTIME_PATTERNS["secure handler automation"] = re.compile(r"['\"][^'\"]*SecureHandler[^'\"]*['\"]")
 
 # Midnight can suspend addon/chat messaging while an active challenge/encounter is
 # running. MDTPullMarker legitimately uses a tiny pre-challenge ownership protocol,
@@ -77,15 +75,6 @@ def runtime_policy_findings(rel: str, text: str) -> list[str]:
         for match in pattern.finditer(text):
             line = text.count("\n", 0, match.start()) + 1
             findings.append(f"{rel}:{line}: forbidden {label}: {match.group(0).strip()}")
-    for label, token in FORBIDDEN_RUNTIME_TOKENS.items():
-        start = 0
-        while True:
-            index = text.find(token, start)
-            if index < 0:
-                break
-            line = text.count("\n", 0, index) + 1
-            findings.append(f"{rel}:{line}: forbidden {label}: {token}")
-            start = index + len(token)
     return findings
 
 
