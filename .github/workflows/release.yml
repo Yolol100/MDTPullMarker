@@ -56,8 +56,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/audit_repository.py scripts/audit_midnight_apis.py scripts/check_upstream_drift.py scripts/build_release.py
+          python3 -m py_compile scripts/audit_repository.py scripts/audit_midnight_apis.py scripts/test_audit_midnight_apis.py scripts/check_upstream_drift.py scripts/build_release.py
           python3 scripts/audit_repository.py
+          python3 scripts/test_audit_midnight_apis.py
           python3 scripts/audit_midnight_apis.py
           python3 scripts/check_upstream_drift.py --validate-only
           lua5.1 tests/run.lua
