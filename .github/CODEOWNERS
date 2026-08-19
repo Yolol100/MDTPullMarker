@@ -1,5 +1,10 @@
 * @Yolol100
 
+/.github/CODEOWNERS @Yolol100
+/.github/dependabot.yml @Yolol100
 /.github/workflows/ @Yolol100
+/scripts/ @Yolol100
 /Runtime/ @Yolol100
 /Integrations/ @Yolol100
+/MDTPullMarker.toc @Yolol100
+/.pkgmeta @Yolol100
