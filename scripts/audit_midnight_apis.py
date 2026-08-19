@@ -13,9 +13,8 @@ EVENTS_PATH = "Core/Events.lua"
 # Combat-decision and automation surfaces that this addon must not consume.
 # SecureActionButtonTemplate is intentionally not forbidden: MDTPullMarker uses a
 # user-activated secure macro button and protects its attributes from combat-time
-# mutation. The policy below focuses on API calls that would let runtime code derive
-# or execute combat decisions automatically. Match call syntax so documentation and
-# compatibility comments can still name restricted APIs without tripping the gate.
+# mutation. The policy below focuses on APIs/tokens that would let runtime code
+# derive or execute combat decisions automatically.
 FORBIDDEN_RUNTIME_PATTERNS: dict[str, re.Pattern[str]] = {
     "combat log decision feed": re.compile(r"\bCombatLogGetCurrentEventInfo\s*\("),
     "aura decision feed": re.compile(r"\bUnitAura\s*\(|\bC_UnitAuras\s*[.:]"),
@@ -24,8 +23,14 @@ FORBIDDEN_RUNTIME_PATTERNS: dict[str, re.Pattern[str]] = {
     "position decision feed": re.compile(r"\bUnitPosition\s*\(|\bGetPlayerMapPosition\s*\("),
     "protected spell/action automation": re.compile(r"\bCastSpellBy(?:ID|Name)\s*\(|\bUseAction\s*\("),
     "protected targeting automation": re.compile(r"\bTargetUnit\s*\(|\bFocusUnit\s*\("),
+    "direct raid-marker automation": re.compile(r"\bSetRaidTarget\s*\("),
+    "ordinary chat automation": re.compile(r"\bSendChatMessage\s*\("),
     "binding/state-driver automation": re.compile(r"\bSet(?:Override)?Binding\s*\(|\bRegisterStateDriver\s*\("),
     "dynamic code execution": re.compile(r"\bloadstring\s*\(|\bRunScript\s*\("),
+}
+FORBIDDEN_RUNTIME_TOKENS = {
+    "combat log event feed": "COMBAT_LOG_EVENT_UNFILTERED",
+    "secure handler automation": "SecureHandler",
 }
 
 # Midnight can suspend addon/chat messaging while an active challenge/encounter is
@@ -45,6 +50,7 @@ REQUIRED_OWNERSHIP_GUARDS = {
     "suspended communication result": '"comm-suspended"',
     "namespaced sender": "C_ChatInfo.SendAddonMessage",
     "namespaced prefix registration": "C_ChatInfo.RegisterAddonMessagePrefix",
+    "bounded incoming payload": "safeString(message, 120)",
 }
 
 
@@ -65,6 +71,24 @@ def toc_runtime_files() -> list[Path]:
     return files
 
 
+def runtime_policy_findings(rel: str, text: str) -> list[str]:
+    findings: list[str] = []
+    for label, pattern in FORBIDDEN_RUNTIME_PATTERNS.items():
+        for match in pattern.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            findings.append(f"{rel}:{line}: forbidden {label}: {match.group(0).strip()}")
+    for label, token in FORBIDDEN_RUNTIME_TOKENS.items():
+        start = 0
+        while True:
+            index = text.find(token, start)
+            if index < 0:
+                break
+            line = text.count("\n", 0, index) + 1
+            findings.append(f"{rel}:{line}: forbidden {label}: {token}")
+            start = index + len(token)
+    return findings
+
+
 def main() -> int:
     findings: list[str] = []
     runtime = toc_runtime_files()
@@ -81,10 +105,7 @@ def main() -> int:
         if rel == EVENTS_PATH:
             events_text = text
 
-        for label, pattern in FORBIDDEN_RUNTIME_PATTERNS.items():
-            for match in pattern.finditer(text):
-                line = text.count("\n", 0, match.start()) + 1
-                findings.append(f"{rel}:{line}: forbidden {label}: {match.group(0).strip()}")
+        findings.extend(runtime_policy_findings(rel, text))
 
         for match in NETWORK_API_REFERENCE.finditer(text):
             if rel == OWNERSHIP_PATH:
