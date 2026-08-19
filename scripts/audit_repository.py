@@ -21,10 +21,23 @@ REQUIRED_REPOSITORY_FILES = {
     ".gitignore",
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
+    ".github/workflows/regression.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/upstream-drift.yml",
+    ".github/workflows/validate.yml",
+    ".luacheckrc",
+    "COMPATIBILITY.md",
     "LICENSE",
+    "LIVE_TEST_MATRIX.md",
     "README.md",
     "RELEASING.md",
     "SECURITY.md",
+    "UPSTREAM_BASELINE.json",
+    "scripts/audit_midnight_apis.py",
+    "scripts/audit_repository.py",
+    "scripts/build_release.py",
+    "scripts/check_upstream_drift.py",
+    "tests/run.lua",
 }
 FORBIDDEN_PATH_PARTS = {
     ".idea",
@@ -104,7 +117,7 @@ def main() -> int:
 
     missing_required = sorted(REQUIRED_REPOSITORY_FILES - set(files))
     if missing_required:
-        fail("required repository metadata is missing: " + ", ".join(missing_required))
+        fail("required repository metadata/audit contract is missing: " + ", ".join(missing_required))
     retired = sorted(RETIRED_PATHS & set(files))
     if retired:
         fail("retired duplicate source paths must stay deleted: " + ", ".join(retired))
@@ -148,15 +161,25 @@ def main() -> int:
             text = read_text(rel)
             if "permissions:" not in text:
                 fail(f"workflow must declare permissions explicitly: {rel}")
+            for forbidden_trigger in ("pull_request_target:", "repository_dispatch:", "workflow_run:"):
+                if forbidden_trigger in text:
+                    fail(f"high-risk workflow trigger {forbidden_trigger[:-1]} is not approved: {rel}")
+            if re.search(r"\$\{\{\s*github\.event\.pull_request\.", text):
+                fail(f"untrusted pull-request metadata interpolation detected in workflow: {rel}")
             for uses in re.findall(r"^\s*-?\s*uses:\s*([^\s#]+)", text, re.M):
                 if uses.startswith(("./", "docker://")):
                     continue
                 if "@" not in uses or not re.fullmatch(r"[0-9a-f]{40}", uses.rsplit("@", 1)[1]):
                     fail(f"workflow action must be pinned to full commit SHA: {rel}: {uses}")
+            if "actions/checkout@" in text and "persist-credentials: false" not in text:
+                fail(f"checkout credentials must not be persisted in workflow: {rel}")
             if re.search(r"(?:curl|wget)[^\n|]*\|\s*(?:ba)?sh\b", text):
                 fail(f"download-to-shell pattern detected: {rel}")
 
-    print(f"ok - repository audit passed ({len(files)} tracked files; {len(entries)} runtime files)")
+    print(
+        f"ok - repository audit passed ({len(files)} tracked files; {len(entries)} runtime files; "
+        "critical audit files/workflow triggers/action pins/checkout credentials locked)"
+    )
     return 0
 
 
