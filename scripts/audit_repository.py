@@ -34,6 +34,7 @@ REQUIRED_REPOSITORY_FILES = {
     "SECURITY.md",
     "UPSTREAM_BASELINE.json",
     "scripts/audit_midnight_apis.py",
+    "scripts/test_audit_midnight_apis.py",
     "scripts/audit_repository.py",
     "scripts/build_release.py",
     "scripts/check_upstream_drift.py",

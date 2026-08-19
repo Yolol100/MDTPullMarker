@@ -6,6 +6,12 @@
 
 - No changes yet.
 
+## 1.0.0-rc60 — ownership transport error hardening
+
+- Reject secret, non-string, empty and overlong ownership protocol payloads before parsing; incoming `CHAT_MSG_ADDON` data is no longer coerced through `tostring` at the ownership trust boundary.
+- Add deterministic malformed-input coverage for wrong prefixes/channels, self messages, non-string and secret payloads, payload-size limits, invalid eligibility and out-of-range protocol versions.
+- Preserve the existing pre-challenge ownership election, active-challenge freeze, messaging-lockdown and split-brain fail-closed contracts while assigning the runtime behavior change a new immutable RC identity.
+
 ## 1.0.0-rc59 — Midnight Season 2 readiness
 
 - Replaced the restricted Midnight `COMBAT_LOG_EVENT_UNFILTERED` registration with the supported `UNIT_DIED` event and retained fail-closed handling for secret unit GUIDs.

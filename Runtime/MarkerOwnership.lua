@@ -617,7 +617,8 @@ function Ownership:OnAddonMessage(prefix, message, channel, sender)
   sender = normalizeFullName(safeString(sender, 180))
   local senderKey = canonical(sender)
   if not senderKey or senderKey == canonical(state.localName) then return false end
-  local rawMessage = tostring(message or "")
+  local rawMessage = safeString(message, 120)
+  if not rawMessage then return false end
   local kind, version, eligible, ownerProtocol = rawMessage:match("^([^|]+)|([^|]*)|([01])|(%d+)$")
   if not kind then
     kind, version, eligible = rawMessage:match("^([^|]+)|([^|]*)|([01])$")

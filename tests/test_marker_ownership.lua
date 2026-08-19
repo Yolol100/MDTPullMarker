@@ -4,9 +4,10 @@ local instructionChanges = {}
 local challengeMapID = nil
 local tankPresent = true
 local chatLockdown = false
+local SECRET = {}
 
 local Addon = {
-  Version = "test-rc52",
+  Version = "test-rc60",
   DungeonSession = {
     GetState = function()
       return {
@@ -30,8 +31,8 @@ local Addon = {
   },
 }
 
-function Addon.IsSecret(_value)
-  return false
+function Addon.IsSecret(value)
+  return value == SECRET
 end
 
 function GetTimePreciseSec()
@@ -109,6 +110,27 @@ assert(Addon.MarkerOwnership, "MarkerOwnership was not loaded")
 
 local ownership = Addon.MarkerOwnership
 assert(ownership:Initialize() == true, "ownership initialization failed")
+
+-- Every externally supplied CHAT_MSG_ADDON field is a trust boundary. Malformed,
+-- secret, overlong or wrongly scoped messages must be rejected without throwing
+-- and without creating peer state.
+local function assertRejected(prefix, message, channel, sender, label)
+  local before = ownership:GetState().peerCount
+  local ok, result = pcall(ownership.OnAddonMessage, ownership, prefix, message, channel, sender)
+  assert(ok, label .. " must not throw")
+  assert(result == false, label .. " must be rejected")
+  assert(ownership:GetState().peerCount == before, label .. " must not create peer state")
+end
+
+assertRejected("OTHER", "H|1.0|1|1", "PARTY", "Tank-Realm", "wrong prefix")
+assertRejected("MDTPM_OWNER", {}, "PARTY", "Tank-Realm", "non-string payload")
+assertRejected("MDTPM_OWNER", SECRET, "PARTY", "Tank-Realm", "secret payload")
+assertRejected("MDTPM_OWNER", string.rep("x", 121), "PARTY", "Tank-Realm", "overlong payload")
+assertRejected("MDTPM_OWNER", "H|1.0|1|1", "SAY", "Tank-Realm", "wrong channel")
+assertRejected("MDTPM_OWNER", "H|1.0|1|1", "PARTY", "Player-Realm", "self sender")
+assertRejected("MDTPM_OWNER", "H|1.0|2|1", "PARTY", "Tank-Realm", "malformed eligibility")
+assertRejected("MDTPM_OWNER", "H|1.0|1|0", "PARTY", "Tank-Realm", "protocol zero")
+assertRejected("MDTPM_OWNER", "H|1.0|1|256", "PARTY", "Tank-Realm", "protocol overflow")
 
 -- A peer without the explicit protocol and below the rc52 legacy boundary is
 -- accepted as a transport message but must make election fail closed.
@@ -224,4 +246,4 @@ assert(state.challengeFrozen == false, "challenge end must release unsettled fre
 assert(#sent > 0, "pre-challenge ownership initialization should exercise addon-message transport")
 assert(#instructionChanges > 0, "ownership lifecycle should notify execution layer")
 
-print("ok - ownership protocol election, Midnight challenge freeze and unsettled-start fail-closed behavior")
+print("ok - ownership protocol malformed-input matrix, election, Midnight challenge freeze and unsettled-start fail-closed behavior")
