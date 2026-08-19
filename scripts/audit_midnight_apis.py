@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TOC = ROOT / "MDTPullMarker.toc"
 OWNERSHIP_PATH = "Runtime/MarkerOwnership.lua"
+EVENTS_PATH = "Core/Events.lua"
 
 # Combat-decision and automation surfaces that this addon must not consume.
 # SecureActionButtonTemplate is intentionally not forbidden: MDTPullMarker uses a
@@ -29,11 +30,12 @@ FORBIDDEN_RUNTIME_PATTERNS: dict[str, re.Pattern[str]] = {
 
 # Midnight can suspend addon/chat messaging while an active challenge/encounter is
 # running. MDTPullMarker legitimately uses a tiny pre-challenge ownership protocol,
-# then freezes the owner and suspends messaging. Networking therefore has one
-# audited runtime owner instead of being banned globally or silently missed when a
-# function reference is passed through pcall.
-NETWORK_REFERENCE = re.compile(
-    r"\bCHAT_MSG_ADDON\b|\bC_ChatInfo\.(?:SendAddonMessage|RegisterAddonMessagePrefix|"
+# then freezes the owner and suspends messaging. Only the ownership implementation
+# may touch the C_ChatInfo networking APIs. Core/Events.lua is separately audited as
+# the single CHAT_MSG_ADDON dispatcher and must forward payloads directly to that
+# ownership module without interpreting them as combat state.
+NETWORK_API_REFERENCE = re.compile(
+    r"\bC_ChatInfo\.(?:SendAddonMessage|RegisterAddonMessagePrefix|"
     r"IsAddonMessagePrefixRegistered|InChatMessagingLockdown)\b|\bSendAddonMessage\b"
 )
 REQUIRED_OWNERSHIP_GUARDS = {
@@ -70,22 +72,30 @@ def main() -> int:
         fail("TOC contains no Lua runtime files")
 
     ownership_text: str | None = None
+    events_text: str | None = None
     for path in runtime:
         text = path.read_text(encoding="utf-8")
         rel = path.relative_to(ROOT).as_posix()
+        if rel == OWNERSHIP_PATH:
+            ownership_text = text
+        if rel == EVENTS_PATH:
+            events_text = text
+
         for label, pattern in FORBIDDEN_RUNTIME_PATTERNS.items():
             for match in pattern.finditer(text):
                 line = text.count("\n", 0, match.start()) + 1
                 findings.append(f"{rel}:{line}: forbidden {label}: {match.group(0).strip()}")
 
-        for match in NETWORK_REFERENCE.finditer(text):
+        for match in NETWORK_API_REFERENCE.finditer(text):
             if rel == OWNERSHIP_PATH:
-                ownership_text = text
                 continue
             line = text.count("\n", 0, match.start()) + 1
             findings.append(
-                f"{rel}:{line}: addon messaging is only allowed in {OWNERSHIP_PATH}: {match.group(0)}"
+                f"{rel}:{line}: addon messaging API is only allowed in {OWNERSHIP_PATH}: {match.group(0)}"
             )
+
+        if "CHAT_MSG_ADDON" in text and rel != EVENTS_PATH:
+            findings.append(f"{rel}: CHAT_MSG_ADDON may only be dispatched by {EVENTS_PATH}")
 
     if ownership_text is None:
         findings.append(f"{OWNERSHIP_PATH}: audited addon-messaging implementation is missing")
@@ -104,6 +114,18 @@ def main() -> int:
         if not re.search(r"pcall\(C_ChatInfo\.SendAddonMessage\s*,", ownership_text):
             findings.append(f"{OWNERSHIP_PATH}: addon sender must remain protected by pcall")
 
+    if events_text is None:
+        findings.append(f"{EVENTS_PATH}: audited CHAT_MSG_ADDON dispatcher is missing")
+    else:
+        if events_text.count('"CHAT_MSG_ADDON"') != 2:
+            findings.append(
+                f"{EVENTS_PATH}: expected exactly one CHAT_MSG_ADDON handler and one registration"
+            )
+        if 'elseif event == "CHAT_MSG_ADDON" then\n    Addon.MarkerOwnership:OnAddonMessage(...)' not in events_text:
+            findings.append(
+                f"{EVENTS_PATH}: CHAT_MSG_ADDON must forward directly to MarkerOwnership:OnAddonMessage"
+            )
+
     if findings:
         for finding in findings:
             print(f"::error::{finding}")
@@ -111,7 +133,7 @@ def main() -> int:
 
     print(
         f"ok - Midnight combat/API policy passed ({len(runtime)} runtime Lua files; "
-        "guarded ownership messaging verified)"
+        "guarded ownership messaging and dispatcher verified)"
     )
     return 0
 
