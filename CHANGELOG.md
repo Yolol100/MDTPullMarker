@@ -6,6 +6,13 @@
 
 - No changes yet.
 
+## 1.0.0-rc61 — protocol and repository-governance hardening
+
+- Add a dedicated addon-network audit for Blizzard's prefix/message byte ceilings, the deliberately low ownership heartbeat cadence and the existing challenge/chat-lockdown send barrier.
+- Move GitHub Actions Dependabot from monthly to weekly review and make CODEOWNERS explicit for its own policy file, workflows, audit scripts, release metadata and runtime/integration trust boundaries.
+- Re-run the same network audit during tagged release validation so source and release cannot diverge on the messaging contract.
+- Keep runtime behavior unchanged from rc60; this RC gives the newly machine-enforced protocol/supply-chain controls a distinct immutable release identity.
+
 ## 1.0.0-rc60 — ownership transport error hardening
 
 - Reject secret, non-string, empty and overlong ownership protocol payloads before parsing; incoming `CHAT_MSG_ADDON` data is no longer coerced through `tostring` at the ownership trust boundary.
