@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TOC = ROOT / "MDTPullMarker.toc"
+OWNERSHIP_PATH = "Runtime/MarkerOwnership.lua"
 
 # Combat-decision and automation surfaces that this addon must not consume.
 # SecureActionButtonTemplate is intentionally not forbidden: MDTPullMarker uses a
@@ -23,8 +24,25 @@ FORBIDDEN_RUNTIME_PATTERNS: dict[str, re.Pattern[str]] = {
     "protected spell/action automation": re.compile(r"\bCastSpellBy(?:ID|Name)\s*\(|\bUseAction\s*\("),
     "protected targeting automation": re.compile(r"\bTargetUnit\s*\(|\bFocusUnit\s*\("),
     "binding/state-driver automation": re.compile(r"\bSet(?:Override)?Binding\s*\(|\bRegisterStateDriver\s*\("),
-    "addon networking": re.compile(r"\bSendAddonMessage\s*\(|\bC_ChatInfo\.SendAddonMessage\s*\("),
     "dynamic code execution": re.compile(r"\bloadstring\s*\(|\bRunScript\s*\("),
+}
+
+# Midnight can suspend addon/chat messaging while an active challenge/encounter is
+# running. MDTPullMarker legitimately uses a tiny pre-challenge ownership protocol,
+# then freezes the owner and suspends messaging. Networking therefore has one
+# audited runtime owner instead of being banned globally or silently missed when a
+# function reference is passed through pcall.
+NETWORK_REFERENCE = re.compile(
+    r"\bCHAT_MSG_ADDON\b|\bC_ChatInfo\.(?:SendAddonMessage|RegisterAddonMessagePrefix|"
+    r"IsAddonMessagePrefixRegistered|InChatMessagingLockdown)\b|\bSendAddonMessage\b"
+)
+REQUIRED_OWNERSHIP_GUARDS = {
+    "chat lockdown guard": "C_ChatInfo.InChatMessagingLockdown",
+    "active challenge guard": "C_ChallengeMode.GetActiveChallengeMapID",
+    "frozen challenge owner": "state.challengeFrozen",
+    "suspended communication result": '"comm-suspended"',
+    "namespaced sender": "C_ChatInfo.SendAddonMessage",
+    "namespaced prefix registration": "C_ChatInfo.RegisterAddonMessagePrefix",
 }
 
 
@@ -51,6 +69,7 @@ def main() -> int:
     if not runtime:
         fail("TOC contains no Lua runtime files")
 
+    ownership_text: str | None = None
     for path in runtime:
         text = path.read_text(encoding="utf-8")
         rel = path.relative_to(ROOT).as_posix()
@@ -59,12 +78,41 @@ def main() -> int:
                 line = text.count("\n", 0, match.start()) + 1
                 findings.append(f"{rel}:{line}: forbidden {label}: {match.group(0).strip()}")
 
+        for match in NETWORK_REFERENCE.finditer(text):
+            if rel == OWNERSHIP_PATH:
+                ownership_text = text
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            findings.append(
+                f"{rel}:{line}: addon messaging is only allowed in {OWNERSHIP_PATH}: {match.group(0)}"
+            )
+
+    if ownership_text is None:
+        findings.append(f"{OWNERSHIP_PATH}: audited addon-messaging implementation is missing")
+    else:
+        for label, marker in REQUIRED_OWNERSHIP_GUARDS.items():
+            if marker not in ownership_text:
+                findings.append(f"{OWNERSHIP_PATH}: missing {label}: {marker}")
+        if not re.search(
+            r"if\s+state\.challengeFrozen\s+or\s+challengeActive\(\)\s+or\s+chatMessagingLockdown\(\)\s+then",
+            ownership_text,
+        ):
+            findings.append(
+                f"{OWNERSHIP_PATH}: sender must fail closed when challenge ownership is frozen, "
+                "a challenge is active, or chat messaging is locked"
+            )
+        if not re.search(r"pcall\(C_ChatInfo\.SendAddonMessage\s*,", ownership_text):
+            findings.append(f"{OWNERSHIP_PATH}: addon sender must remain protected by pcall")
+
     if findings:
         for finding in findings:
             print(f"::error::{finding}")
         fail("Midnight combat/API policy audit failed")
 
-    print(f"ok - Midnight combat/API policy passed ({len(runtime)} runtime Lua files)")
+    print(
+        f"ok - Midnight combat/API policy passed ({len(runtime)} runtime Lua files; "
+        "guarded ownership messaging verified)"
+    )
     return 0
 
 
