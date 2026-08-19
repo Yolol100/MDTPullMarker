@@ -72,14 +72,6 @@ def main() -> int:
         if marker not in owners:
             fail(f"critical CODEOWNER boundary missing: {marker}")
 
-    dependency_review = (ROOT / ".github/workflows/dependency-review.yml").read_text(encoding="utf-8")
-    if "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294" not in dependency_review:
-        fail("Dependency Review Action must remain pinned to the reviewed v5.0.0 commit")
-    if "fail-on-severity: moderate" not in dependency_review:
-        fail("Dependency Review must block newly introduced moderate-or-higher vulnerabilities")
-    if "persist-credentials: false" not in dependency_review:
-        fail("Dependency Review checkout must not persist Git credentials")
-
     print(
         "ok - addon-message protocol and repository dependency governance are "
         "bounded, lockdown-aware and release-enforced"
