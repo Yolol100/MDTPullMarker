@@ -9,11 +9,26 @@ permissions:
 
 jobs:
   syntax:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y lua5.1 lua-check
+        with:
+          persist-credentials: false
+      - name: Install Lua validation tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' /etc/apt/apt-mirrors.txt
+          fi
+          apt_opts=(
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=20
+            -o Acquire::https::Timeout=20
+          )
+          sudo apt-get "${apt_opts[@]}" update
+          sudo apt-get "${apt_opts[@]}" install -y lua5.1 lua-check
       - name: Audit complete repository
         shell: bash
         run: |
@@ -36,7 +51,7 @@ jobs:
           set -euo pipefail
           mapfile -t runtime_files < <(awk 'NF && $1 !~ /^#/ { gsub(/\\/, "/"); if ($0 ~ /\.lua$/) print $0 }' MDTPullMarker.toc)
           test "${#runtime_files[@]}" -gt 0
-          luacheck "${runtime_files[@]}"
+          luacheck --codes "${runtime_files[@]}"
       - name: Verify TOC files
         shell: bash
         run: |
