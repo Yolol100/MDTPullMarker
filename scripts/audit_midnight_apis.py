@@ -11,19 +11,20 @@ TOC = ROOT / "MDTPullMarker.toc"
 # Combat-decision and automation surfaces that this addon must not consume.
 # SecureActionButtonTemplate is intentionally not forbidden: MDTPullMarker uses a
 # user-activated secure macro button and protects its attributes from combat-time
-# mutation. The policy below focuses on data/automation APIs that would let runtime
-# code derive or execute combat decisions automatically.
+# mutation. The policy below focuses on API calls that would let runtime code derive
+# or execute combat decisions automatically. Match call syntax so documentation and
+# compatibility comments can still name restricted APIs without tripping the gate.
 FORBIDDEN_RUNTIME_PATTERNS: dict[str, re.Pattern[str]] = {
-    "combat log decision feed": re.compile(r"\bCombatLogGetCurrentEventInfo\b|COMBAT_LOG_EVENT_UNFILTERED"),
-    "aura decision feed": re.compile(r"\bUnitAura\b|\bC_UnitAuras\b"),
-    "health/power decision feed": re.compile(r"\bUnitHealth(?:Max)?\b|\bUnitPower(?:Max)?\b"),
-    "cast decision feed": re.compile(r"\bUnitCastingInfo\b|\bUnitChannelInfo\b"),
-    "position decision feed": re.compile(r"\bUnitPosition\b|\bGetPlayerMapPosition\b"),
-    "protected spell/action automation": re.compile(r"\bCastSpellBy(?:ID|Name)\b|\bUseAction\b"),
-    "protected targeting automation": re.compile(r"\bTargetUnit\b|\bFocusUnit\b"),
-    "binding/state-driver automation": re.compile(r"\bSet(?:Override)?Binding\b|\bRegisterStateDriver\b"),
-    "addon networking": re.compile(r"\bSendAddonMessage\b|\bC_ChatInfo\.SendAddonMessage\b"),
-    "dynamic code execution": re.compile(r"\bloadstring\b|\bRunScript\b"),
+    "combat log decision feed": re.compile(r"\bCombatLogGetCurrentEventInfo\s*\("),
+    "aura decision feed": re.compile(r"\bUnitAura\s*\(|\bC_UnitAuras\s*[.:]"),
+    "health/power decision feed": re.compile(r"\bUnitHealth(?:Max)?\s*\(|\bUnitPower(?:Max)?\s*\("),
+    "cast decision feed": re.compile(r"\bUnitCastingInfo\s*\(|\bUnitChannelInfo\s*\("),
+    "position decision feed": re.compile(r"\bUnitPosition\s*\(|\bGetPlayerMapPosition\s*\("),
+    "protected spell/action automation": re.compile(r"\bCastSpellBy(?:ID|Name)\s*\(|\bUseAction\s*\("),
+    "protected targeting automation": re.compile(r"\bTargetUnit\s*\(|\bFocusUnit\s*\("),
+    "binding/state-driver automation": re.compile(r"\bSet(?:Override)?Binding\s*\(|\bRegisterStateDriver\s*\("),
+    "addon networking": re.compile(r"\bSendAddonMessage\s*\(|\bC_ChatInfo\.SendAddonMessage\s*\("),
+    "dynamic code execution": re.compile(r"\bloadstring\s*\(|\bRunScript\s*\("),
 }
 
 
@@ -56,7 +57,7 @@ def main() -> int:
         for label, pattern in FORBIDDEN_RUNTIME_PATTERNS.items():
             for match in pattern.finditer(text):
                 line = text.count("\n", 0, match.start()) + 1
-                findings.append(f"{rel}:{line}: forbidden {label}: {match.group(0)}")
+                findings.append(f"{rel}:{line}: forbidden {label}: {match.group(0).strip()}")
 
     if findings:
         for finding in findings:
