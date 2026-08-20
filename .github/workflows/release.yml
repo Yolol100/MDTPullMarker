@@ -56,10 +56,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/audit_repository.py scripts/audit_midnight_apis.py scripts/test_audit_midnight_apis.py scripts/check_upstream_drift.py scripts/build_release.py scripts/build_sbom.py
+          python3 -m py_compile scripts/audit_repository.py scripts/audit_midnight_apis.py scripts/test_audit_midnight_apis.py scripts/audit_addon_network.py scripts/check_upstream_drift.py scripts/build_release.py scripts/build_sbom.py
           python3 scripts/audit_repository.py
           python3 scripts/test_audit_midnight_apis.py
           python3 scripts/audit_midnight_apis.py
+          python3 scripts/audit_addon_network.py
           python3 scripts/check_upstream_drift.py --validate-only
           lua5.1 tests/run.lua
           find . -type f -name '*.lua' -print0 | while IFS= read -r -d '' file; do
