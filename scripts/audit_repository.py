@@ -37,6 +37,7 @@ REQUIRED_REPOSITORY_FILES = {
     "scripts/test_audit_midnight_apis.py",
     "scripts/audit_repository.py",
     "scripts/build_release.py",
+    "scripts/build_sbom.py",
     "scripts/check_upstream_drift.py",
     "tests/run.lua",
 }
@@ -73,6 +74,10 @@ SECRET_PATTERNS = {
     "Slack token": re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{20,}\b"),
     "OpenAI key": re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}\b"),
 }
+FORBIDDEN_ADDON_POLICY = re.compile(
+    r"\b(?:patreon|paypal|donat(?:e|ion|ions)|premium|advertis(?:e|ement|ements|ing)|sponsor(?:ed|ship)?)\b",
+    re.I,
+)
 
 
 def fail(message: str) -> None:
@@ -109,6 +114,21 @@ def toc_entries() -> list[str]:
         if line and not line.startswith("#"):
             entries.append(line.replace("\\", "/"))
     return entries
+
+
+def validate_addon_policy(entries: list[str]) -> None:
+    metadata = []
+    for raw in TOC.read_text(encoding="utf-8").splitlines():
+        if raw.startswith(("## Title:", "## Notes:", "## Category:", "## X-Category:")):
+            metadata.append(raw)
+    visible = "\n".join(metadata)
+    if FORBIDDEN_ADDON_POLICY.search(visible):
+        fail("Blizzard add-on policy advertising/donation/premium token in visible TOC metadata")
+    for rel in entries:
+        source = read_text(rel)
+        match = FORBIDDEN_ADDON_POLICY.search(source)
+        if match:
+            fail(f"Blizzard add-on policy advertising/donation/premium token in runtime {rel}: {match.group(0)}")
 
 
 def main() -> int:
@@ -156,6 +176,7 @@ def main() -> int:
     unlisted = sorted(runtime_lua - set(entries))
     if unlisted:
         fail("runtime Lua exists outside TOC inventory: " + ", ".join(unlisted))
+    validate_addon_policy(entries)
 
     for rel in files:
         if rel.startswith(".github/workflows/") and rel.endswith((".yml", ".yaml")):
@@ -177,9 +198,25 @@ def main() -> int:
             if re.search(r"(?:curl|wget)[^\n|]*\|\s*(?:ba)?sh\b", text):
                 fail(f"download-to-shell pattern detected: {rel}")
 
+    validate_workflow = read_text(".github/workflows/validate.yml")
+    release_workflow = read_text(".github/workflows/release.yml")
+    for marker in (
+        "scripts/build_sbom.py",
+        "SBOM.spdx.json",
+    ):
+        if marker not in validate_workflow:
+            fail(f"validation workflow missing deterministic SBOM gate: {marker}")
+    for marker in (
+        "scripts/build_sbom.py",
+        "sbom-path: dist/SBOM.spdx.json",
+        '"dist/SBOM.spdx.json"',
+    ):
+        if marker not in release_workflow:
+            fail(f"release workflow missing SBOM publication/attestation gate: {marker}")
+
     print(
         f"ok - repository audit passed ({len(files)} tracked files; {len(entries)} runtime files; "
-        "critical audit files/workflow triggers/action pins/checkout credentials locked)"
+        "critical audit files/workflow triggers/action pins/checkout credentials/Blizzard policy/SBOM locked)"
     )
     return 0
 

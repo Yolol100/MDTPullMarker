@@ -56,10 +56,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/audit_repository.py scripts/audit_midnight_apis.py scripts/test_audit_midnight_apis.py scripts/check_upstream_drift.py scripts/build_release.py
+          python3 -m py_compile scripts/audit_repository.py scripts/audit_midnight_apis.py scripts/test_audit_midnight_apis.py scripts/audit_addon_network.py scripts/check_upstream_drift.py scripts/build_release.py scripts/build_sbom.py
           python3 scripts/audit_repository.py
           python3 scripts/test_audit_midnight_apis.py
           python3 scripts/audit_midnight_apis.py
+          python3 scripts/audit_addon_network.py
           python3 scripts/check_upstream_drift.py --validate-only
           lua5.1 tests/run.lua
           find . -type f -name '*.lua' -print0 | while IFS= read -r -d '' file; do
@@ -70,24 +71,37 @@ jobs:
           luacheck --codes "${runtime_files[@]}"
           git diff --check
 
-      - name: Build deterministic release archive
+      - name: Build deterministic release archive and SPDX SBOM
         shell: bash
         run: |
           set -euo pipefail
           VERSION="$(sed -n 's/^## Version:[[:space:]]*//p' MDTPullMarker.toc | head -n1 | tr -d '\r')"
           mkdir -p dist/round1 dist/round2
           python3 scripts/build_release.py "dist/round1/MDTPullMarker-${VERSION}.zip" >/dev/null
+          python3 scripts/build_sbom.py --archive "dist/round1/MDTPullMarker-${VERSION}.zip" --output dist/round1/SBOM.spdx.json
           python3 scripts/build_release.py "dist/round2/MDTPullMarker-${VERSION}.zip" >/dev/null
+          python3 scripts/build_sbom.py --archive "dist/round2/MDTPullMarker-${VERSION}.zip" --output dist/round2/SBOM.spdx.json
           cmp -s "dist/round1/MDTPullMarker-${VERSION}.zip" "dist/round2/MDTPullMarker-${VERSION}.zip"
+          cmp -s dist/round1/SBOM.spdx.json dist/round2/SBOM.spdx.json
           mv "dist/round1/MDTPullMarker-${VERSION}.zip" "dist/MDTPullMarker-${VERSION}.zip"
+          mv dist/round1/SBOM.spdx.json dist/SBOM.spdx.json
           rm -rf dist/round1 dist/round2
-          (cd dist && sha256sum "MDTPullMarker-${VERSION}.zip" > SHA256SUMS.txt)
+          (cd dist && sha256sum "MDTPullMarker-${VERSION}.zip" SBOM.spdx.json > SHA256SUMS.txt)
           (cd dist && sha256sum -c SHA256SUMS.txt)
 
       - name: Attest release assets
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: dist/*
+          subject-path: |
+            dist/MDTPullMarker-*.zip
+            dist/SHA256SUMS.txt
+            dist/SBOM.spdx.json
+
+      - name: Attest release ZIP with SPDX SBOM predicate
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/MDTPullMarker-*.zip
+          sbom-path: dist/SBOM.spdx.json
 
       - name: Create draft GitHub Release
         shell: bash
@@ -104,6 +118,7 @@ jobs:
             gh release create "$GITHUB_REF_NAME"
             "dist/MDTPullMarker-${VERSION}.zip"
             "dist/SHA256SUMS.txt"
+            "dist/SBOM.spdx.json"
             --verify-tag
             --title "MDT Pull Marker ${VERSION}"
             --generate-notes

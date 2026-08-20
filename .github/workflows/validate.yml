@@ -33,10 +33,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/audit_repository.py scripts/audit_midnight_apis.py scripts/test_audit_midnight_apis.py scripts/check_upstream_drift.py scripts/build_release.py
+          python3 -m py_compile scripts/audit_repository.py scripts/audit_midnight_apis.py scripts/test_audit_midnight_apis.py scripts/audit_addon_network.py scripts/check_upstream_drift.py scripts/build_release.py scripts/build_sbom.py
           python3 scripts/audit_repository.py
           python3 scripts/test_audit_midnight_apis.py
           python3 scripts/audit_midnight_apis.py
+          python3 scripts/audit_addon_network.py
           python3 scripts/check_upstream_drift.py --validate-only
           git diff --check
       - name: Compile Lua files
@@ -75,12 +76,24 @@ jobs:
           grep -Fq 'Runtime\RuntimeController.lua' MDTPullMarker.toc
           grep -Fq 'Integrations\MDTIntegration.lua' MDTPullMarker.toc
           grep -Fq 'UI\ConfigurationUI.lua' MDTPullMarker.toc
-      - name: Verify deterministic CurseForge package
+      - name: Verify deterministic CurseForge package and SPDX SBOM
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist/a dist/b
           python3 scripts/build_release.py dist/a/MDTPullMarker.zip > dist/a/SHA256SUMS.txt
+          python3 scripts/build_sbom.py --archive dist/a/MDTPullMarker.zip --output dist/a/SBOM.spdx.json
           python3 scripts/build_release.py dist/b/MDTPullMarker.zip > dist/b/SHA256SUMS.txt
+          python3 scripts/build_sbom.py --archive dist/b/MDTPullMarker.zip --output dist/b/SBOM.spdx.json
           cmp -s dist/a/MDTPullMarker.zip dist/b/MDTPullMarker.zip
+          cmp -s dist/a/SBOM.spdx.json dist/b/SBOM.spdx.json
           test "$(sha256sum dist/a/MDTPullMarker.zip | cut -d' ' -f1)" = "$(cut -d' ' -f1 dist/a/SHA256SUMS.txt)"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          doc = json.loads(Path('dist/a/SBOM.spdx.json').read_text(encoding='utf-8'))
+          assert doc['spdxVersion'] == 'SPDX-2.3'
+          assert doc['packages'][0]['name'] == 'MDTPullMarker'
+          assert doc['packages'][0]['filesAnalyzed'] is True
+          assert doc['files']
+          PY

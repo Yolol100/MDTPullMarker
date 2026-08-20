@@ -4,10 +4,11 @@
 ## Title: MDT Pull Marker
 ## Notes: Pull-aware combat marker macros for Mythic Dungeon Tools.
 ## Author: Webactueel Team
-## Version: 1.0.0-rc60
+## Version: 1.0.0-rc61
 ## SavedVariables: MDTPullMarkerDB
 ## Dependencies: MythicDungeonTools
 ## Category: Dungeons & Raids
+## X-License: MIT
 ## IconTexture: Interface\TargetingFrame\UI-RaidTargetingIcon_8
 ## AddonCompartmentFunc: MDTPullMarker_Open
 ## AddonCompartmentFuncOnEnter: MDTPullMarker_CompartmentEnter
