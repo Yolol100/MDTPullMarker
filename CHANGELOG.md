@@ -6,6 +6,15 @@
 
 - No changes yet.
 
+## 1.0.0-rc61 — public-distribution and SBOM hardening
+
+- Add a deterministic SPDX 2.3 SBOM for the exact CurseForge runtime inventory, including source-file checksums, package verification code and the release ZIP digest.
+- Build the ZIP and SBOM twice in CI and require byte-identical results before release.
+- Publish the SBOM beside the release ZIP and checksum manifest, and bind the ZIP to the SBOM with a dedicated GitHub/Sigstore SBOM attestation in addition to ordinary build provenance.
+- Lock Blizzard UI Add-On Development Policy hygiene for runtime/visible metadata by rejecting in-game advertising, premium, sponsorship and donation-solicitation tokens.
+- Declare the existing MIT license in TOC metadata and retain the case-sensitive single-root `MDTPullMarker/MDTPullMarker.toc` CurseForge package contract.
+- Re-verify Mythic Dungeon Tools upstream on 2026-08-20; master remains release 6.2.4, so no MDT runtime adapter change is required.
+
 ## 1.0.0-rc60 — ownership transport error hardening
 
 - Reject secret, non-string, empty and overlong ownership protocol payloads before parsing; incoming `CHAT_MSG_ADDON` data is no longer coerced through `tostring` at the ownership trust boundary.
