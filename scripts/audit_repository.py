@@ -33,6 +33,7 @@ REQUIRED_REPOSITORY_FILES = {
     "RELEASING.md",
     "SECURITY.md",
     "UPSTREAM_BASELINE.json",
+    "scripts/audit_addon_network.py",
     "scripts/audit_midnight_apis.py",
     "scripts/test_audit_midnight_apis.py",
     "scripts/audit_repository.py",
@@ -199,7 +200,22 @@ def main() -> int:
                 fail(f"download-to-shell pattern detected: {rel}")
 
     validate_workflow = read_text(".github/workflows/validate.yml")
+    regression_workflow = read_text(".github/workflows/regression.yml")
     release_workflow = read_text(".github/workflows/release.yml")
+
+    for label, workflow in (
+        ("validation", validate_workflow),
+        ("regression", regression_workflow),
+    ):
+        for marker in (
+            "workflow_dispatch:",
+            "concurrency:",
+            "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+            "lua5.1 tests/run.lua",
+        ):
+            if marker not in workflow:
+                fail(f"{label} workflow missing hardened test/concurrency gate: {marker}")
+
     for marker in (
         "scripts/build_sbom.py",
         "SBOM.spdx.json",
@@ -216,7 +232,7 @@ def main() -> int:
 
     print(
         f"ok - repository audit passed ({len(files)} tracked files; {len(entries)} runtime files; "
-        "critical audit files/workflow triggers/action pins/checkout credentials/Blizzard policy/SBOM locked)"
+        "critical audit files/workflow triggers/action pins/checkout credentials/Blizzard policy/SBOM/test concurrency locked)"
     )
     return 0
 
