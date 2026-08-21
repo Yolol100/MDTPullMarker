@@ -18,6 +18,7 @@ This checklist records patterns reviewed from comparable Mythic+ addons and the 
 - [x] Treat the existing `/mdtpm plan [pull]` command as the safe local preview path: it renders the exact validated marker plan without creating/updating macros or applying raid markers.
 - [x] Document that preview path in the primary README so users do not need a hidden advanced command list to discover it.
 - [x] Keep native AddOn Compartment integration and add the official localized **Dungeons & Raids** category metadata for the modern WoW AddOns list.
+- [x] Fix the existing automatic AddOn Compartment tooltip callback to the current `(addonName, menuButtonFrame)` signature and lock its authoritative load order after the legacy command callback.
 - [x] Keep repository/runtime version text consistent with the TOC identity.
 - [ ] Do **not** add scenario-forces auto-advancement in this pass. MDT Pull Marker owns deterministic marker execution, not a second route-progress estimator; expanding that boundary requires separate live evidence.
 - [ ] Do **not** add Combat Log based pull inference. Existing readable/restricted death evidence and fail-closed progression remain the safer boundary.
@@ -25,4 +26,4 @@ This checklist records patterns reviewed from comparable Mythic+ addons and the 
 
 ## Result
 
-The useful upgrade from the comparison is primarily discoverability and drift resistance, not additional automation. The addon already contains the recovery/diagnostic controls that several comparable addons expose; this round makes the safe preview path and native WoW metadata first-class and prevents documentation/version drift from returning.
+The useful upgrade from the comparison is primarily discoverability, current WoW callback compatibility and drift resistance, not additional automation. The addon already contains the recovery/diagnostic controls that several comparable addons expose; this round makes the safe preview path and native WoW metadata first-class, fixes the Compartment tooltip handler and prevents documentation/version drift from returning.
