@@ -2,9 +2,14 @@
 
 > Repository evidence note: the current public tree contains the runtime source, focused Lua regression suite, repository/package audit scripts and checked-in GitHub validation workflows. Historical entries can describe verification assets from earlier development states; only assets that are present in the current tree are treated as current release evidence. The current automated gate compiles Lua 5.1, runs focused regressions, audits the repository/TOC inventory and verifies deterministic packaging.
 
-## Unreleased
+## 1.0.0-rc62 — comparable-addon UX and WoW compartment compatibility
 
-- No changes yet.
+- Review Mythic Dungeon Tools, MDT Next Pull Tracker, WarpDeplete, Angry Keystones and MythicPlusTimer and adopt only patterns that fit MDT Pull Marker's deterministic marker-execution boundary.
+- Make the existing `/mdtpm plan [pull]` local-only marker-plan preview discoverable in the primary README alongside `status`, `doctor` and manual recovery controls.
+- Add Blizzard's localized `Dungeons & Raids` category metadata for the modern AddOns list.
+- Fix the automatic AddOn Compartment tooltip callback for the modern `(addonName, menuButtonFrame)` signature while preserving the existing click behavior.
+- Lock README/TOC version parity, category metadata, Compartment registration/signature/load order and comparison evidence with focused regression coverage.
+- Do not add Combat Log pull inference, scenario-forces auto-advancement, duplicated MDT season data or automatic route sharing.
 
 ## 1.0.0-rc61 — public-distribution, protocol and SBOM hardening
 
@@ -31,7 +36,7 @@
 - Fail closed if the frozen challenge owner is positively proven to have left the group; unknown/secret roster reads preserve the freeze instead of risking split-brain.
 - Added deterministic coverage for challenge start during the short ownership settle window; an unsettled election remains passive for that challenge instead of freezing a provisional owner.
 - Kept automatic bulk marker application at Blizzard's Season 2 limit of three target-marker operations per macro activation and added an explicit boundary regression.
-- Reviewed the adapter against upstream Mythic Dungeon Tools 6.2.4; Season 2 enemy-force corrections remain owned by MDT instead of being duplicated in this add-on.
+- Reviewed the adapter against upstream Mythic Dungeon Tools 6.2.4; Season 2 route and force corrections remain owned by MDT instead of being duplicated in this add-on.
 - Added focused Lua 5.1 regression coverage for the event inventory, readable/restricted unit-death evidence, grouped ownership election and Midnight challenge-lockdown behavior.
 - Added `SECURITY.md` and `CODEOWNERS` repository maintenance metadata.
 - Bumped runtime/package identity to `1.0.0-rc59`.
