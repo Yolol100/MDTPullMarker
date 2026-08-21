@@ -48,4 +48,5 @@ UI\ConfigurationUI.lua
 UI\RuntimeFrame.lua
 Integrations\MDTIntegration.lua
 Core\Commands.lua
+Core\AddonCompartment.lua
 Core\Events.lua
