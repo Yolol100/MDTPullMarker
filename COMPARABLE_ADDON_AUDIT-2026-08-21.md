@@ -18,7 +18,8 @@ This checklist records patterns reviewed from comparable Mythic+ addons and the 
 - [x] Treat the existing `/mdtpm plan [pull]` command as the safe local preview path: it renders the exact validated marker plan without creating/updating macros or applying raid markers.
 - [x] Document that preview path in the primary README so users do not need a hidden advanced command list to discover it.
 - [x] Keep native AddOn Compartment integration and add the official localized **Dungeons & Raids** category metadata for the modern WoW AddOns list.
-- [x] Fix the existing automatic AddOn Compartment tooltip callback to the current `(addonName, menuButtonFrame)` signature and lock its authoritative load order after the legacy command callback.
+- [x] Keep all three automatic AddOn Compartment callbacks in `Core/AddonCompartment.lua`. `Core/Commands.lua` exposes `Addon.Commands` but does not define Compartment globals; the module load order only ensures the command API exists before the Compartment module consumes it.
+- [x] Use the current `(addonName, menuButtonFrame)` automatic AddOn Compartment tooltip signature and anchor the tooltip to the actual menu frame.
 - [x] Keep repository/runtime version text consistent with the TOC identity.
 - [ ] Do **not** add scenario-forces auto-advancement in this pass. MDT Pull Marker owns deterministic marker execution, not a second route-progress estimator; expanding that boundary requires separate live evidence.
 - [ ] Do **not** add Combat Log based pull inference. Existing readable/restricted death evidence and fail-closed progression remain the safer boundary.
@@ -26,4 +27,4 @@ This checklist records patterns reviewed from comparable Mythic+ addons and the 
 
 ## Result
 
-The useful upgrade from the comparison is primarily discoverability, current WoW callback compatibility and drift resistance, not additional automation. The addon already contains the recovery/diagnostic controls that several comparable addons expose; this round makes the safe preview path and native WoW metadata first-class, fixes the Compartment tooltip handler and prevents documentation/version drift from returning.
+The useful upgrade from the comparison is primarily discoverability, current WoW callback compatibility and drift resistance, not additional automation. The safe preview path and native WoW metadata are first-class, and the Compartment callbacks now have one explicit runtime owner instead of depending on a later file to overwrite an older callback implementation.

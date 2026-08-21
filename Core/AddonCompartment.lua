@@ -1,9 +1,15 @@
 local _, Addon = ...
 
--- WoW 11.0+ automatic AddOn Compartment callbacks pass
--- (addonName, menuButtonFrame) to OnEnter/OnLeave handlers. Keep this tiny
--- compatibility owner loaded after Core/Commands.lua so older one-argument
--- callback code cannot anchor GameTooltip to the addon-name string.
+local Commands = Addon.Commands
+
+function MDTPullMarker_Open(_, buttonName)
+  if buttonName == "RightButton" then
+    Addon.RuntimeFrame:Open()
+  else
+    Commands:OpenPrimaryInterface()
+  end
+end
+
 function MDTPullMarker_CompartmentEnter(_, menuButtonFrame)
   if not GameTooltip or not menuButtonFrame then return end
   local L = Addon.L or {}
