@@ -226,13 +226,59 @@ def main() -> int:
         "scripts/build_sbom.py",
         "sbom-path: dist/SBOM.spdx.json",
         '"dist/SBOM.spdx.json"',
+        "gh attestation verify",
+        "--predicate-type https://spdx.dev/Document/v2.3",
     ):
         if marker not in release_workflow:
-            fail(f"release workflow missing SBOM publication/attestation gate: {marker}")
+            fail(f"release workflow missing least-privilege SBOM/attestation verification gate: {marker}")
+
+    if not re.search(r"(?ms)^permissions:\n  contents: read\s*$", release_workflow):
+        fail("release workflow top-level permissions must default to contents: read")
+
+    validate_release_match = re.search(r"(?ms)^  validate-release:\n(.*?)(?=^  attest-release:\n)", release_workflow)
+    if not validate_release_match:
+        fail("release workflow must separate read-only validation/build from attestation")
+    validate_release_block = validate_release_match.group(1)
+    for forbidden in ("id-token: write", "attestations: write", "artifact-metadata: write", "contents: write"):
+        if forbidden in validate_release_block:
+            fail(f"release validation/build job must remain read-only: {forbidden}")
+    for marker in ("lua5.1 tests/run.lua", "scripts/audit_repository.py", "Build deterministic release archive and SPDX SBOM", "Upload exact validated release payload"):
+        if marker not in validate_release_block:
+            fail(f"release validation/build contract drifted: {marker}")
+
+    attest_match = re.search(r"(?ms)^  attest-release:\n(.*?)(?=^  draft-release:\n)", release_workflow)
+    if not attest_match:
+        fail("release workflow missing isolated attestation job")
+    attest_block = attest_match.group(1)
+    for marker in (
+        "needs: validate-release",
+        "id-token: write",
+        "attestations: write",
+        "artifact-metadata: write",
+        "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
+    ):
+        if marker not in attest_block:
+            fail(f"release attestation contract drifted: {marker}")
+
+    draft_match = re.search(r"(?ms)^  draft-release:\n(.*)$", release_workflow)
+    if not draft_match:
+        fail("release workflow missing draft publication job")
+    draft_block = draft_match.group(1)
+    for marker in (
+        "needs: [validate-release, attest-release]",
+        "contents: write",
+        "attestations: read",
+        "gh attestation verify",
+        "--predicate-type https://spdx.dev/Document/v2.3",
+        "gh release create",
+        "--draft",
+    ):
+        if marker not in draft_block:
+            fail(f"draft release publication contract drifted: {marker}")
 
     print(
         f"ok - repository audit passed ({len(files)} tracked files; {len(entries)} runtime files; "
-        "critical audit files/workflow triggers/action pins/checkout credentials/Blizzard policy/SBOM/test concurrency locked)"
+        "critical audit files/workflow triggers/action pins/checkout credentials/Blizzard policy/SBOM/test concurrency/least-privilege release locked)"
     )
     return 0
 
