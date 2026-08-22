@@ -12,7 +12,9 @@ Client-specific combat, UI and action-button behavior still requires live Retail
 
 The adapter contains compatibility handling for the MDT 6.1.x monolithic/global layout and the 6.2.x public-core plus load-on-demand UI layout. Versions beyond the configured range are reported as untested rather than silently accepted.
 
-The current compatibility range includes MDT 6.2.4. Upstream 6.2.3/6.2.4 Season 2 changes are dungeon-data and rendering corrections, including The Blinding Vale enemy-force corrections and the Murder Row total-force correction. MDT Pull Marker intentionally reads the installed MDT route and enemy data instead of maintaining a duplicate Season 2 force table, so those corrections flow through without a local data fork.
+The current compatibility range includes MDT 6.2.5. The 2026-08-22 source review pins upstream tag `6.2.5` at commit `68e9378b7e894ebdf990f8759657f70c611742fa`. Relative to 6.2.4, the release contains dungeon-data corrections plus one relevant Focus Marker safety change: when no Focus Marker is selected while `preserveExistingTargetMarkers` is enabled, MDT now leaves an existing target marker untouched instead of emitting a clearing target-marker action. The setting name and Focus Marker storage contract consumed by `MDTFocusMarkerBridge` are unchanged, so no MDTPullMarker runtime adapter change is required.
+
+Upstream 6.2.x dungeon-data corrections continue to flow through the installed MDT route/enemy data. MDT Pull Marker intentionally does not maintain a duplicate Season 2 enemy-force table, so corrected groupings, names, boss data, positions, health values and enemy forces remain MDT-owned truth rather than a local fork.
 
 A version marked `source-verified` means its adapter/source contract was explicitly reviewed. The latest live-client validation remains a separate release gate; source review alone does not prove in-game behavior.
 
