@@ -1,4 +1,4 @@
-# Compatibility — 1.0.0-rc60
+# Compatibility — 1.0.0-rc62
 
 ## World of Warcraft
 
@@ -24,8 +24,8 @@ The integration prefers `MythicDungeonToolsAPI` where the required method is ava
 - UID-less routes resolve by their saved membership fingerprint.
 - Missing or ambiguous route identity fails closed instead of binding by name alone.
 - Active Challenge Map identity is authoritative.
-- rc60 detects incompatible pre-rc52 peers and remains passive rather than risking multiple active marker owners.
-- rc60 also rejects secret, malformed, non-string and oversized ownership-protocol payloads before parsing or peer-state mutation.
+- The current rc62 build detects incompatible pre-rc52 peers and remains passive rather than risking multiple active marker owners.
+- The current rc62 build also rejects secret, malformed, non-string and oversized ownership-protocol payloads before parsing or peer-state mutation.
 - Only eligible clients that have announced this add-on participate in grouped marker-owner election; unrelated tanks or leaders cannot suppress all marking.
 - Grouped ownership is settled before an active Mythic+ challenge and frozen for the full challenge.
 - Midnight chat/addon-message lockdown is treated as expected transport suspension; the running challenge does not send ownership heartbeats or re-elect between combats.
