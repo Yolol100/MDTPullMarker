@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-08-19",
+  "reviewedAt": "2026-08-28",
   "provider": {
     "name": "MythicDungeonTools",
     "repository": "Nnoggie/MythicDungeonTools",
     "ref": "master",
-    "expectedVersion": "6.2.4",
+    "expectedVersion": "6.2.9",
     "watchPaths": [
       {
         "path": "CHANGELOG.txt",
-        "blobSha": "a80dbae0c774bfee0c4c5200bb99d34ad9dc31a2"
+        "blobSha": "4621d8b1a7d791d0c55de36009f340c992cd8247"
       },
       {
         "path": "Modules/API.lua",
