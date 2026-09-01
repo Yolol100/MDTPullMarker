@@ -1,5 +1,9 @@
 # MDT Pull Marker 1.0.0-rc62
 
+> **Portfolio status:** Active supporting product · standalone WoW Retail addon
+
+**Portfolio role:** MDT Pull Marker is a focused Mythic Dungeon Tools companion. It remains independent from [KeystoneLens](https://github.com/Yolol100/KeystoneLens) and [RaidLeadAssist](https://github.com/Yolol100/RaidLeadAssist), with its own addon contract, validation and release lifecycle.
+
 MDT Pull Marker is a World of Warcraft Retail addon that turns Mythic Dungeon Tools target assignments into pull-aware marker macros while staying fail-closed around combat, route changes and Midnight messaging restrictions.
 
 ## Source layout
