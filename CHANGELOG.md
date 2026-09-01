@@ -4,6 +4,7 @@
 
 ## 1.0.0-rc62 — comparable-addon UX and WoW compartment compatibility
 
+- Re-review Mythic Dungeon Tools 6.2.10 on 2026-09-01: the consumed API blob and preset-selection layout remain compatible; the upstream release changes MDT-owned Season 2 dungeon data only.
 - Review Mythic Dungeon Tools, MDT Next Pull Tracker, WarpDeplete, Angry Keystones and MythicPlusTimer and adopt only patterns that fit MDT Pull Marker's deterministic marker-execution boundary.
 - Make the existing `/mdtpm plan [pull]` local-only marker-plan preview discoverable in the primary README alongside `status`, `doctor` and manual recovery controls.
 - Add Blizzard's localized `Dungeons & Raids` category metadata for the modern AddOns list.

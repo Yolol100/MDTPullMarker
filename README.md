@@ -28,7 +28,7 @@ The AddOn Compartment entry provides the native WoW shortcut: left-click opens t
 
 ## Compatibility
 
-The current rc62 source targets the Retail 12.1 interface contract. Mythic Dungeon Tools 6.2.9 was source-reviewed on 2026-08-28; the public `Modules/API.lua` contract used by the integration is unchanged from the previously reviewed 6.2.x source. Versions in the configured 6.1.17 through 6.2.x compatibility range that are not explicitly source-verified continue to be reported as compatible-range rather than silently promoted to verified-source. The addon does not duplicate MDT dungeon/forces data; Season 2 route and force corrections remain owned by MDT.
+The current rc62 source targets the Retail 12.1 interface contract. Mythic Dungeon Tools 6.2.10 was source-reviewed on 2026-09-01; the public `Modules/API.lua` contract used by the integration is byte-identical to the previously reviewed 6.2.x source and the consumed preset-selection fields remain present. Versions in the configured 6.1.17 through 6.2.x compatibility range that are not explicitly source-verified continue to be reported as compatible-range rather than silently promoted to verified-source. The addon does not duplicate MDT dungeon/forces data; Season 2 route, health, ability, model, grouping and force corrections remain owned by MDT.
 
 Grouped marker ownership is settled before a Mythic+ challenge and frozen for that challenge. Midnight chat/addon-message lockdown is treated as expected communication suspension, and positively losing the frozen owner fails closed instead of electing a replacement without communication.
 
