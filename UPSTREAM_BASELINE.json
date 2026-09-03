@@ -1,19 +1,35 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-01",
+  "reviewedAt": "2026-09-03",
   "provider": {
     "name": "MythicDungeonTools",
     "repository": "Nnoggie/MythicDungeonTools",
     "ref": "master",
-    "expectedVersion": "6.2.10",
+    "expectedVersion": "6.2.12",
     "watchPaths": [
       {
         "path": "CHANGELOG.txt",
-        "blobSha": "15403aa881593618b0a7a15e8bd7d0870a5e7410"
+        "blobSha": "2467e196c8b3bb685386d2864ec891f07f721e91"
       },
       {
         "path": "Modules/API.lua",
         "blobSha": "4b99a76a8d65f6078f0df42525c2b3d2df87ef50"
+      },
+      {
+        "path": "Modules/FocusMarker.lua",
+        "blobSha": "a92cafa68b4632c7625011eaa00fad16b5a78b1f"
+      },
+      {
+        "path": "Modules/Presets.lua",
+        "blobSha": "c95644efcf516d4906c7a834f4f289f326b353de"
+      },
+      {
+        "path": "Core/Bootstrap.lua",
+        "blobSha": "ec2aa93b6c69d9cd7f881776c6d525d67da8a7a4"
+      },
+      {
+        "path": "MythicDungeonTools_UI/Bootstrap.lua",
+        "blobSha": "4e5e331331e3626f94817ed5dc4fb50300f603c8"
       }
     ]
   }

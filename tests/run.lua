@@ -10,6 +10,7 @@ local files = {
   "tests/test_runtime_controller.lua",
   "tests/test_marker_executor.lua",
   "tests/test_smart_macro_manager.lua",
+  "tests/test_comparable_addon_contract.lua",
 }
 
 for _, path in ipairs(files) do

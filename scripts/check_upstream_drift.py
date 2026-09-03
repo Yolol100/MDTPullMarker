@@ -16,6 +16,14 @@ BASELINE_PATH = ROOT / "UPSTREAM_BASELINE.json"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 API = "https://api.github.com"
+REQUIRED_WATCH_PATHS = {
+    "CHANGELOG.txt",
+    "Modules/API.lua",
+    "Modules/FocusMarker.lua",
+    "Modules/Presets.lua",
+    "Core/Bootstrap.lua",
+    "MythicDungeonTools_UI/Bootstrap.lua",
+}
 
 
 def fail(message: str) -> None:
@@ -62,6 +70,10 @@ def load_baseline() -> dict:
         seen.add(path)
         if not isinstance(blob_sha, str) or not SHA_RE.fullmatch(blob_sha):
             fail(f"invalid blobSha for {path}")
+
+    missing_required = sorted(REQUIRED_WATCH_PATHS - seen)
+    if missing_required:
+        fail("provider.watchPaths missing required compatibility paths: " + ", ".join(missing_required))
     return data
 
 

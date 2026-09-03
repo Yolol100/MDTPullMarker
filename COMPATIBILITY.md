@@ -1,4 +1,4 @@
-# Compatibility — 1.0.0-rc62
+# Compatibility — 1.0.0-rc63
 
 ## World of Warcraft
 
@@ -12,11 +12,13 @@ Client-specific combat, UI and action-button behavior still requires live Retail
 
 The adapter contains compatibility handling for the MDT 6.1.x monolithic/global layout and the 6.2.x public-core plus load-on-demand UI layout. Versions beyond the configured range are reported as untested rather than silently accepted.
 
-The current compatibility range includes MDT 6.2.10. The 2026-09-01 source review pins upstream tag `6.2.10` at commit `e214023441c425a6be2ecea33a5ceb0fc3b87d19`. The public `Modules/API.lua` blob remains exactly `4b99a76a8d65f6078f0df42525c2b3d2df87ef50`, unchanged from the previously reviewed 6.2.x source, while `Modules/Presets.lua` still contains the `db.currentDungeonIdx`, `db.currentPreset` and `db.presets` route-selection fields consumed by the adapter. The 6.2.10 changelog is limited to Season 2 enemy health, abilities, models, creature types, groupings and enemy-force corrections, so no MDTPullMarker runtime adapter change is required.
+The current compatibility review covers MDT 6.2.12 at upstream commit `5c9413ffde853e71c8fe3f1864dc5ae42e301f64` on 2026-09-03. The public `Modules/API.lua` blob remains `4b99a76a8d65f6078f0df42525c2b3d2df87ef50`, unchanged from the previously reviewed 6.2.x source. `Modules/Presets.lua` still exposes the `db.currentDungeonIdx`, `db.currentPreset` and `db.presets` route-selection layout consumed by the adapter. `Core/Bootstrap.lua` still exposes `RegisterUIInitializer`, and the load-on-demand UI plugin still provides `RegisterNavigationSection`, `SetCurrentSection` and `GetNavigationSectionContentFrame` for the embedded panel path.
 
-Upstream 6.2.x dungeon-data corrections continue to flow through the installed MDT route/enemy data. MDT Pull Marker intentionally does not maintain a duplicate Season 2 enemy-force table, so corrected groupings, names, boss data, positions, health values and enemy forces remain MDT-owned truth rather than a local fork.
+MDT 6.2.11 corrected enemy placements and pull groupings in King's Rest, Ruby Life Pools, Temple of Sethraliss and The Blinding Vale. Those corrections flow through the installed MDT route/enemy data; MDT Pull Marker intentionally does not maintain a duplicate Season 2 enemy-force table. MDT 6.2.12 changes the Focus Marker account-macro slot lookup to Blizzard's namespaced macro constant. The Focus Marker saved settings consumed by the bridge, including `preserveExistingTargetMarkers`, remain compatible, so no marker-execution algorithm change is required in MDTPullMarker.
 
-A version marked `source-verified` means its adapter/source contract was explicitly reviewed and is present in the runtime's explicit verified-version allowlist. MDT 6.2.10 remains inside the accepted compatibility range but is deliberately reported as `compatible-range` by the current rc62 runtime; the 2026-09-01 source review does not silently change that runtime classification. Live-client validation remains a separate release gate, and source review alone does not prove in-game behavior.
+The upstream drift baseline now requires and fingerprints the release changelog, public API, Focus Marker implementation, preset route-selection source, core UI initializer and load-on-demand UI plugin bootstrap. Removing any of those required watch surfaces makes the checker fail validation rather than silently reducing coverage.
+
+A version marked `source-verified` means its adapter/source contract is present in the runtime's explicit verified-version allowlist. MDT 6.2.12 remains inside the accepted 6.2.x compatibility range and this repository review does not silently expand that runtime allowlist. Live-client validation remains a separate release gate, and source review alone does not prove in-game protected-action behavior.
 
 The integration prefers `MythicDungeonToolsAPI` where the required method is available; legacy `_G.MDT` access is isolated as a fallback. Captured MDT enemy metadata is treated as supplemental evidence rather than proof of a complete dungeon inventory.
 
@@ -26,8 +28,8 @@ The integration prefers `MythicDungeonToolsAPI` where the required method is ava
 - UID-less routes resolve by their saved membership fingerprint.
 - Missing or ambiguous route identity fails closed instead of binding by name alone.
 - Active Challenge Map identity is authoritative.
-- The current rc62 build detects incompatible pre-rc52 peers and remains passive rather than risking multiple active marker owners.
-- The current rc62 build also rejects secret, malformed, non-string and oversized ownership-protocol payloads before parsing or peer-state mutation.
+- The current rc63 build detects incompatible pre-rc52 peers and remains passive rather than risking multiple active marker owners.
+- The current rc63 build also rejects secret, malformed, non-string and oversized ownership-protocol payloads before parsing or peer-state mutation.
 - Only eligible clients that have announced this add-on participate in grouped marker-owner election; unrelated tanks or leaders cannot suppress all marking.
 - Grouped ownership is settled before an active Mythic+ challenge and frozen for the full challenge.
 - Midnight chat/addon-message lockdown is treated as expected transport suspension; the running challenge does not send ownership heartbeats or re-elect between combats.
@@ -38,4 +40,4 @@ All marker operators in a group should use a current build.
 
 ## Repository validation
 
-The checked-in GitHub workflows install Lua 5.1, compile the Lua source, run the focused regression suite, execute the repository audit and verify the active TOC/package inventory. The `scripts/` directory contains the current repository-audit and deterministic release-build helpers; it is tooling only and is not part of the WoW runtime inventory.
+The checked-in GitHub workflows install Lua 5.1, compile the Lua source, run the focused regression suite, execute the repository audit, regression-test upstream-drift failure modes and verify the active TOC/package inventory. The `scripts/` directory contains the current repository-audit and deterministic release-build helpers; it is tooling only and is not part of the WoW runtime inventory.

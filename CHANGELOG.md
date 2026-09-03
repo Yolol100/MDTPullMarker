@@ -2,6 +2,16 @@
 
 > Repository evidence note: the current public tree contains the runtime source, focused Lua regression suite, repository/package audit scripts and checked-in GitHub validation workflows. Historical entries can describe verification assets from earlier development states; only assets that are present in the current tree are treated as current release evidence. The current automated gate compiles Lua 5.1, runs focused regressions, audits the repository/TOC inventory and verifies deterministic packaging.
 
+## 1.0.0-rc63 — MDT 6.2.12 compatibility and upstream-drift hardening
+
+- Re-review Mythic Dungeon Tools 6.2.12 on 2026-09-03 at upstream commit `5c9413ffde853e71c8fe3f1864dc5ae42e301f64`; the consumed public API, route-selection and load-on-demand UI plugin contracts remain compatible.
+- Verify MDT 6.2.11's route/grouping corrections remain MDT-owned data and MDT 6.2.12's Focus Marker change is limited to the account-macro slot constant lookup; no MDTPullMarker marker-execution algorithm change is required.
+- Expand the upstream baseline from changelog/API-only coverage to the Focus Marker implementation, preset route-selection source, core UI initializer and load-on-demand UI bootstrap.
+- Make those compatibility surfaces mandatory in `scripts/check_upstream_drift.py`, so deleting a critical watch path fails validation instead of silently weakening future drift detection.
+- Add deterministic Python regressions for a clean upstream, missing required watch coverage, Focus Marker drift and version drift, and wire them into the main validation workflow.
+- Restore the comparable-addon contract test to the active Lua regression runner and align its version/MDT source evidence with rc63.
+- Preserve the existing live Retail acceptance gate: source/CI evidence does not claim protected-action or in-client behavior that has not been exercised in WoW.
+
 ## 1.0.0-rc62 — comparable-addon UX and WoW compartment compatibility
 
 - Re-review Mythic Dungeon Tools 6.2.10 on 2026-09-01: the consumed API blob and preset-selection layout remain compatible; the upstream release changes MDT-owned Season 2 dungeon data only.
