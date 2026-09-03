@@ -1,4 +1,4 @@
-# MDT Pull Marker 1.0.0-rc62
+# MDT Pull Marker 1.0.0-rc63
 
 > **Portfolio status:** Active supporting product · standalone WoW Retail addon
 
@@ -13,7 +13,7 @@ MDT Pull Marker is a World of Warcraft Retail addon that turns Mythic Dungeon To
 - `Runtime/` - session and runtime state
 - `UI/` - configuration and runtime views
 - `Locale/` - localization
-- `tests/` - focused Lua 5.1 regression coverage
+- `tests/` - focused Lua 5.1 and upstream-drift regression coverage
 - `scripts/` - repository audit and deterministic release packaging
 
 The active runtime inventory is defined exclusively by `MDTPullMarker.toc`. Tests, scripts, repository metadata and release documentation are never included in the addon runtime ZIP unless explicitly allowlisted by the deterministic packager.
@@ -28,7 +28,9 @@ The AddOn Compartment entry provides the native WoW shortcut: left-click opens t
 
 ## Compatibility
 
-The current rc62 source targets the Retail 12.1 interface contract. Mythic Dungeon Tools 6.2.10 was source-reviewed on 2026-09-01; the public `Modules/API.lua` contract used by the integration is byte-identical to the previously reviewed 6.2.x source and the consumed preset-selection fields remain present. Versions in the configured 6.1.17 through 6.2.x compatibility range that are not explicitly source-verified continue to be reported as compatible-range rather than silently promoted to verified-source. The addon does not duplicate MDT dungeon/forces data; Season 2 route, health, ability, model, grouping and force corrections remain owned by MDT.
+The current rc63 source targets the Retail 12.1 interface contract. Mythic Dungeon Tools 6.2.12 was source-reviewed on 2026-09-03 at upstream commit `5c9413ffde853e71c8fe3f1864dc5ae42e301f64`. The public `Modules/API.lua` contract used by the integration remains byte-identical to the previously reviewed 6.2.x source, the consumed preset-selection fields remain present, and the load-on-demand UI initializer/plugin contract remains available. MDT 6.2.11 corrected MDT-owned Season 2 route data; 6.2.12 fixes MDT's own Focus Marker macro-slot lookup without changing the saved Focus Marker settings consumed by this addon.
+
+The upstream drift gate now watches the MDT release changelog, public API, Focus Marker implementation, preset route-selection source, core UI initializer and load-on-demand UI plugin bootstrap. Versions in the configured 6.1.17 through 6.2.x compatibility range remain fail-safe when they are not in the runtime's explicit source-verified allowlist. The addon does not duplicate MDT dungeon/forces data; Season 2 route, health, ability, model, grouping and force corrections remain owned by MDT.
 
 Grouped marker ownership is settled before a Mythic+ challenge and frozen for that challenge. Midnight chat/addon-message lockdown is treated as expected communication suspension, and positively losing the frozen owner fails closed instead of electing a replacement without communication.
 
@@ -36,7 +38,7 @@ Automatic marking remains capped at three targets per macro activation, matching
 
 ## Quality and release model
 
-GitHub Actions compile all Lua with Lua 5.1, run focused regressions, audit repository hygiene and verify deterministic packaging. Actions are pinned to immutable commit SHAs and Dependabot is configured to maintain those pins.
+GitHub Actions compile all Lua with Lua 5.1, run focused regressions, audit repository hygiene, regression-test the upstream drift checker and verify deterministic packaging. Actions are pinned to immutable commit SHAs and Dependabot is configured to maintain those pins.
 
 Generated ZIPs and checksums are release outputs, not source files. Tagged `v<VERSION>` builds are rebuilt from source, checked twice for determinism, SHA-256 hashed, attested and published as GitHub Release assets. See `RELEASING.md` for the live-client and CurseForge release gate.
 
@@ -44,4 +46,4 @@ Generated ZIPs and checksums are release outputs, not source files. Tagged `v<VE
 
 ## Public release status
 
-The source is Season 2-ready. A stable public release still requires the live Retail smoke-test matrix on the intended client/MDT versions. Pre-release versions such as `1.0.0-rc62` should remain preview/beta distribution until that gate passes.
+The source is Season 2-ready. A stable public release still requires the live Retail smoke-test matrix on the intended client/MDT versions. Pre-release versions such as `1.0.0-rc63` should remain preview/beta distribution until that gate passes.
