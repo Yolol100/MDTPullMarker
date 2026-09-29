@@ -1,5 +1,9 @@
 # MDT Pull Marker
 
+> **Other engineering · Lua · World of Warcraft Retail · Mythic Dungeon Tools integration**
+
+This project sits outside my primary WordPress portfolio and is included as additional engineering work.
+
 MDT Pull Marker is a World of Warcraft Retail add-on that turns Mythic Dungeon Tools target assignments into pull-aware marker macros.
 
 ## Requirements
