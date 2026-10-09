@@ -24,6 +24,10 @@ This project sits outside my primary WordPress portfolio and is included as addi
 - World of Warcraft Retail
 - Mythic Dungeon Tools
 
+## Current MDT compatibility
+
+Upstream MDT version **6.3.5** (8 October 2026) has been compared at source/API level with 6.2.12. Public and legacy navigation methods remain present, but this is **not** an in-game regression test. The add-on deliberately classifies MDT 6.3.x as `untested-newer` and warns while retaining its existing defensive route validation. It must not be described as fully verified on MDT 6.3.5 until a representative World of Warcraft client test passes.
+
 ## Installation
 
 1. Place the `MDTPullMarker` folder in `World of Warcraft/_retail_/Interface/AddOns/`.
