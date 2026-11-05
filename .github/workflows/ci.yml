@@ -1,0 +1,37 @@
+name: Add-on source quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lua 5.1 syntax and manifest contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check TOC and Bindings.xml
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Install Lua 5.1 compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends lua5.1
+
+      - name: Compile-check all add-on Lua source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -type f -name '*.lua' -not -path './tests/*' -print0 |
+            xargs -0 -r -n1 luac5.1 -p
